@@ -126,9 +126,42 @@ async function buildElement(
   f.opacity = s.opacity;
   f.clipsContent = s.overflowHidden;
 
+  if (s.layout) {
+    const L = s.layout;
+    f.layoutMode = L.direction === "horizontal" ? "HORIZONTAL" : "VERTICAL";
+    f.primaryAxisSizingMode = "FIXED";
+    f.counterAxisSizingMode = "FIXED";
+    f.itemSpacing = L.gap;
+    f.paddingTop = L.paddingTop;
+    f.paddingRight = L.paddingRight;
+    f.paddingBottom = L.paddingBottom;
+    f.paddingLeft = L.paddingLeft;
+    f.primaryAxisAlignItems = ({
+      start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN",
+    } as const)[L.justifyContent];
+    const counter = ({
+      start: "MIN", center: "CENTER", end: "MAX", baseline: "BASELINE", stretch: "MIN",
+    } as const)[L.alignItems];
+    // BASELINE so vale para HORIZONTAL
+    f.counterAxisAlignItems = counter === "BASELINE" && f.layoutMode === "VERTICAL" ? "MIN" : counter;
+    if (L.wrap && f.layoutMode === "HORIZONTAL") {
+      f.layoutWrap = "WRAP";
+      f.counterAxisSpacing = L.gap;
+    }
+    // garante o tamanho capturado depois de ligar o layout
+    f.resize(Math.max(n.rect.width, 0.01), Math.max(n.rect.height, 0.01));
+  }
+
   for (const child of n.children) {
     const c = await buildNode(child, { x: n.rect.x, y: n.rect.y });
-    if (c) f.appendChild(c);
+    if (c) {
+      f.appendChild(c);
+      // filhos position:absolute/fixed mantem coordenadas dentro do Auto Layout
+      if (s.layout && child.absolute && "layoutPositioning" in c) {
+        c.layoutPositioning = "ABSOLUTE";
+        place(c, child.rect, { x: n.rect.x, y: n.rect.y });
+      }
+    }
   }
   return f;
 }

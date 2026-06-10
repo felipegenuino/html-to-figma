@@ -11,6 +11,7 @@ import type {
   Shadow,
   Gradient,
   Rect,
+  AutoLayout,
 } from "@h2f/shared";
 import { CLIPBOARD_MARKER, SCHEMA_VERSION } from "@h2f/shared";
 
@@ -23,8 +24,7 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // Normaliza o scroll: elementos fixed/sticky ficam nas coordenadas certas
   const prevX = scrollX;
   const prevY = scrollY;
-  scrollTo(0, 0);
-  await nextFrame();
+  await preloadLazyContent();
   try {
     const node = await walkElement(root);
     return {
@@ -45,9 +45,39 @@ export async function capture(root: Element): Promise<CaptureDocument> {
 }
 
 function nextFrame(): Promise<void> {
-  return new Promise((r) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => r()))
+  // rAF nao dispara em abas em segundo plano - corrida com timeout
+  return new Promise((r) => {
+    const t = setTimeout(r, 250);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        clearTimeout(t);
+        r();
+      })
+    );
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Rola a página inteira antes de capturar para disparar IntersectionObservers
+ * (imagens lazy, secoes animadas) e volta ao topo.
+ */
+async function preloadLazyContent(): Promise<void> {
+  const step = Math.max(innerHeight, 200);
+  const maxY = Math.min(
+    document.documentElement.scrollHeight,
+    step * 40 // limite para paginas "infinitas"
   );
+  for (let y = 0; y <= maxY; y += step) {
+    scrollTo(0, y);
+    await sleep(80);
+  }
+  scrollTo(0, 0);
+  await sleep(350); // tempo para lazy assets resolverem src
+  await nextFrame();
 }
 
 function emptyRoot(): ElementNode {
@@ -102,6 +132,48 @@ function paintOrderKey(cs: CSSStyleDeclaration): number {
   return 0;
 }
 
+// -------------------------------------------------------------- auto layout
+
+/** display:flex (row/column, sem reverse) vira Auto Layout no Figma. */
+function detectAutoLayout(cs: CSSStyleDeclaration): AutoLayout | null {
+  if (cs.display !== "flex" && cs.display !== "inline-flex") return null;
+  const dir = cs.flexDirection;
+  if (dir !== "row" && dir !== "column") return null; // reverse: fora da v1
+  const horizontal = dir === "row";
+  const gapStr = horizontal ? cs.columnGap : cs.rowGap;
+  const px = (v: string) => parseFloat(v) || 0;
+
+  const alignItems: AutoLayout["alignItems"] = cs.alignItems.includes("center")
+    ? "center"
+    : cs.alignItems.includes("end")
+      ? "end"
+      : cs.alignItems.includes("baseline")
+        ? "baseline"
+        : cs.alignItems.includes("start")
+          ? "start"
+          : "stretch";
+
+  const justifyContent: AutoLayout["justifyContent"] = cs.justifyContent.includes("center")
+    ? "center"
+    : cs.justifyContent.includes("end")
+      ? "end"
+      : cs.justifyContent.startsWith("space")
+        ? "space-between"
+        : "start";
+
+  return {
+    direction: horizontal ? "horizontal" : "vertical",
+    gap: gapStr === "normal" ? 0 : px(gapStr),
+    paddingTop: px(cs.paddingTop),
+    paddingRight: px(cs.paddingRight),
+    paddingBottom: px(cs.paddingBottom),
+    paddingLeft: px(cs.paddingLeft),
+    alignItems,
+    justifyContent,
+    wrap: cs.flexWrap === "wrap" || cs.flexWrap === "wrap-reverse",
+  };
+}
+
 // ------------------------------------------------------------------- walker
 
 async function walkElement(el: Element): Promise<CapturedNode | null> {
@@ -114,33 +186,42 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
   if (el instanceof SVGSVGElement) return svgNode(el, r);
   if (el instanceof HTMLImageElement) return await imageNode(el, cs, r);
 
+  let layout = detectAutoLayout(cs);
   const entries: { key: number; idx: number; node: CapturedNode }[] = [];
   let idx = 0;
+  let textLines = 0;
   for (const child of Array.from(el.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) {
       for (const t of textNodes(child as Text, cs)) {
         entries.push({ key: 0, idx: idx++, node: t });
+        textLines++;
       }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       const childEl = child as Element;
+      const childCs = getComputedStyle(childEl);
       const node = await walkElement(childEl);
       if (node) {
-        entries.push({
-          key: paintOrderKey(getComputedStyle(childEl)),
-          idx: idx++,
-          node,
-        });
+        if (layout && (childCs.position === "absolute" || childCs.position === "fixed")) {
+          node.absolute = true;
+        }
+        entries.push({ key: paintOrderKey(childCs), idx: idx++, node });
       }
     }
   }
   entries.sort((a, b) => a.key - b.key || a.idx - b.idx);
+
+  // Texto multi-linha direto no flex viraria itens com gap errado - desliga
+  if (textLines > 1) layout = null;
+
+  const styles = await elementStyles(el, cs);
+  styles.layout = layout;
 
   return {
     type: "element",
     tag: el.tagName.toLowerCase(),
     name: layerName(el),
     rect: pageRect(r),
-    styles: await elementStyles(el, cs),
+    styles,
     children: entries.map((e) => e.node),
   };
 }
@@ -382,6 +463,7 @@ function defaultStyles(): ElementStyles {
     boxShadow: [],
     opacity: 1,
     overflowHidden: false,
+    layout: null,
   };
 }
 
@@ -426,6 +508,7 @@ async function elementStyles(
     boxShadow: parseShadows(cs.boxShadow),
     opacity: Number(cs.opacity),
     overflowHidden: cs.overflow === "hidden" || cs.overflow === "clip",
+    layout: null, // preenchido pelo walkElement
   };
 }
 

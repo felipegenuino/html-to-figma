@@ -34,6 +34,14 @@ npm run build
 1. Na página alvo, clique na extensão → "Capturar página inteira" ou "Selecionar elemento…" (Esc cancela).
 2. No Figma, rode o plugin, cole o JSON (Ctrl+V) e clique em "Importar".
 
+## Já resolvido (v0.3)
+
+- **Auto Layout**: `display: flex` (row/column) vira Auto Layout no Figma —
+  gap, padding, align-items, justify-content e wrap mapeados; filhos
+  `position: absolute/fixed` recebem `layoutPositioning: ABSOLUTE`.
+- **Lazy load**: a captura rola a página inteira antes (dispara
+  IntersectionObservers) e volta ao topo — sem mais seções vazias.
+
 ## Já resolvido (v0.2)
 
 - Ordem de pintura aproximada por z-index (overlays/fixed pintam por cima).
@@ -51,7 +59,7 @@ npm run build
 
 ## Próximos passos
 
-- Auto Layout a partir de flex/grid detectado.
+- Auto Layout para `display: grid` e flex `*-reverse`.
 - Captura de pseudo-elementos e `transform`.
 - Screenshot por elemento como fallback de fidelidade.
 - Transferência via WebSocket/servidor local em vez de clipboard (payloads grandes).

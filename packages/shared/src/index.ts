@@ -8,14 +8,14 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
 
 export interface CaptureDocument {
   marker: typeof CLIPBOARD_MARKER;
-  version: typeof SCHEMA_VERSION;
+  version: number;
   source: {
     url: string;
     title: string;
@@ -44,6 +44,11 @@ interface BaseNode {
   /** Nome da layer no Figma (ex.: "div.card", "img#logo"). */
   name: string;
   rect: Rect;
+  /**
+   * true quando o pai vira Auto Layout mas este filho é position:absolute/fixed
+   * — no Figma recebe layoutPositioning ABSOLUTE e mantém x/y.
+   */
+  absolute?: boolean;
 }
 
 /** Container genérico (div, section, button...) → Frame no Figma. */
@@ -54,7 +59,7 @@ export interface ElementNode extends BaseNode {
   children: CapturedNode[];
 }
 
-/** Run de texto → TextNode no Figma. */
+/** Linha visual de texto → TextNode no Figma (um nó por line box). */
 export interface TextNode extends BaseNode {
   type: "text";
   content: string;
@@ -64,7 +69,7 @@ export interface TextNode extends BaseNode {
 /** <img> ou background-image → Rectangle com image fill. */
 export interface ImageNode extends BaseNode {
   type: "image";
-  /** data URL (preferido) ou URL remota se CORS bloquear a conversão. */
+  /** data URL (preferido) ou URL remota se a conversão falhar. */
   src: string;
   objectFit: "fill" | "contain" | "cover" | "none" | "scale-down";
   borderRadius: BorderRadius;
@@ -77,6 +82,19 @@ export interface SvgNode extends BaseNode {
   svg: string;
 }
 
+/** display:flex detectado → Auto Layout no Figma. */
+export interface AutoLayout {
+  direction: "horizontal" | "vertical";
+  gap: number;
+  paddingTop: number;
+  paddingRight: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  alignItems: "start" | "center" | "end" | "stretch" | "baseline";
+  justifyContent: "start" | "center" | "end" | "space-between";
+  wrap: boolean;
+}
+
 export interface ElementStyles {
   backgroundColor: string | null; // rgba() ou null se transparente
   backgroundImage: string | null; // data URL/URL se houver bg-image
@@ -86,6 +104,7 @@ export interface ElementStyles {
   boxShadow: Shadow[];
   opacity: number;
   overflowHidden: boolean;
+  layout: AutoLayout | null;
 }
 
 export interface TextStyles {
