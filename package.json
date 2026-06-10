@@ -1,0 +1,18 @@
+{
+  "name": "html-to-figma",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @h2f/extension && npm run build -w @h2f/figma-plugin",
+    "build:extension": "npm run build -w @h2f/extension",
+    "build:plugin": "npm run build -w @h2f/figma-plugin"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0",
+    "@figma/plugin-typings": "^1.95.0",
+    "@types/chrome": "^0.0.268"
+  }
+}

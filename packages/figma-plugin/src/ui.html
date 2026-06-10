@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body {
+      margin: 0;
+      padding: 12px;
+      font: 12px/1.4 "Inter", system-ui, sans-serif;
+      background: #2c2c2c;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      height: calc(100vh - 24px);
+    }
+    textarea {
+      flex: 1;
+      resize: none;
+      background: #1e1e1e;
+      color: #ccc;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 8px;
+      font: 11px monospace;
+    }
+    button {
+      padding: 8px;
+      border: 0;
+      border-radius: 6px;
+      background: #0d99ff;
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    #status { min-height: 14px; font-size: 11px; color: #9c9; }
+    #status.error { color: #e88; }
+  </style>
+</head>
+<body>
+  <textarea id="json" placeholder="Cole aqui o JSON copiado pela extensão (Ctrl+V)…"></textarea>
+  <button id="import">Importar</button>
+  <div id="status"></div>
+  <script>
+    const ta = document.getElementById("json");
+    const statusEl = document.getElementById("status");
+
+    // Tenta ler o clipboard automaticamente ao focar (nem sempre permitido)
+    ta.addEventListener("focus", async () => {
+      if (ta.value) return;
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.includes("h2f-capture")) ta.value = text;
+      } catch { /* sem permissão — usuário cola manualmente */ }
+    });
+
+    document.getElementById("import").onclick = () => {
+      const json = ta.value.trim();
+      if (!json) {
+        statusEl.textContent = "Cole o JSON primeiro.";
+        statusEl.className = "error";
+        return;
+      }
+      statusEl.textContent = "Importando…";
+      statusEl.className = "";
+      parent.postMessage({ pluginMessage: { type: "import", json } }, "*");
+    };
+
+    onmessage = (e) => {
+      const msg = e.data.pluginMessage;
+      if (!msg) return;
+      statusEl.textContent = msg.text;
+      statusEl.className = msg.error ? "error" : "";
+    };
+  </script>
+</body>
+</html>

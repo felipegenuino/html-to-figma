@@ -1,0 +1,153 @@
+/**
+ * Schema do JSON intermediário compartilhado entre a extensão (produtor)
+ * e o plugin do Figma (consumidor).
+ *
+ * Convenções:
+ * - Todas as coordenadas são absolutas em relação à página (não ao viewport).
+ * - Cores são strings rgba() já resolvidas pelo getComputedStyle.
+ * - Unidades já resolvidas em px.
+ */
+
+export const SCHEMA_VERSION = 1 as const;
+
+/** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
+export const CLIPBOARD_MARKER = "h2f-capture" as const;
+
+export interface CaptureDocument {
+  marker: typeof CLIPBOARD_MARKER;
+  version: typeof SCHEMA_VERSION;
+  source: {
+    url: string;
+    title: string;
+    capturedAt: string; // ISO 8601
+    viewport: { width: number; height: number };
+    devicePixelRatio: number;
+  };
+  root: CapturedNode;
+}
+
+export type CapturedNode =
+  | ElementNode
+  | TextNode
+  | ImageNode
+  | SvgNode;
+
+export interface Rect {
+  /** Absoluto em relação à página. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface BaseNode {
+  /** Nome da layer no Figma (ex.: "div.card", "img#logo"). */
+  name: string;
+  rect: Rect;
+}
+
+/** Container genérico (div, section, button...) → Frame no Figma. */
+export interface ElementNode extends BaseNode {
+  type: "element";
+  tag: string;
+  styles: ElementStyles;
+  children: CapturedNode[];
+}
+
+/** Run de texto → TextNode no Figma. */
+export interface TextNode extends BaseNode {
+  type: "text";
+  content: string;
+  styles: TextStyles;
+}
+
+/** <img> ou background-image → Rectangle com image fill. */
+export interface ImageNode extends BaseNode {
+  type: "image";
+  /** data URL (preferido) ou URL remota se CORS bloquear a conversão. */
+  src: string;
+  objectFit: "fill" | "contain" | "cover" | "none" | "scale-down";
+  borderRadius: BorderRadius;
+}
+
+/** SVG inline → importado via createNodeFromSvg. */
+export interface SvgNode extends BaseNode {
+  type: "svg";
+  /** outerHTML do <svg>. */
+  svg: string;
+}
+
+export interface ElementStyles {
+  backgroundColor: string | null; // rgba() ou null se transparente
+  backgroundImage: string | null; // data URL/URL se houver bg-image
+  gradient: Gradient | null;
+  border: Border | null;
+  borderRadius: BorderRadius;
+  boxShadow: Shadow[];
+  opacity: number;
+  overflowHidden: boolean;
+}
+
+export interface TextStyles {
+  fontFamily: string; // primeira família da lista
+  fontSize: number;
+  fontWeight: number;
+  fontStyle: "normal" | "italic";
+  lineHeight: number | null; // px, null = auto
+  letterSpacing: number; // px
+  color: string; // rgba()
+  textAlign: "left" | "center" | "right" | "justify";
+  textDecoration: "none" | "underline" | "line-through";
+  textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
+}
+
+export interface Border {
+  width: number;
+  color: string;
+  style: "solid" | "dashed" | "dotted";
+}
+
+export interface BorderRadius {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
+
+export interface Shadow {
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  spread: number;
+  color: string;
+  inset: boolean;
+}
+
+export interface Gradient {
+  type: "linear";
+  angle: number; // graus
+  stops: { color: string; position: number }[]; // position 0..1
+}
+
+/** Parse de "rgba(r, g, b, a)" / "rgb(r, g, b)" → componentes 0..1. */
+export function parseRgba(
+  s: string
+): { r: number; g: number; b: number; a: number } | null {
+  const m = s.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/);
+  if (!m) return null;
+  return {
+    r: Number(m[1]) / 255,
+    g: Number(m[2]) / 255,
+    b: Number(m[3]) / 255,
+    a: m[4] !== undefined ? Number(m[4]) : 1,
+  };
+}
+
+export function isCaptureDocument(v: unknown): v is CaptureDocument {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    (v as CaptureDocument).marker === CLIPBOARD_MARKER &&
+    typeof (v as CaptureDocument).root === "object"
+  );
+}
