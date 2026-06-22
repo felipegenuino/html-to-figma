@@ -77,25 +77,39 @@ if (multi) {
   }
 }
 
-// --- radial-gradient ---
+// --- radial-gradient (camada única) ---
 const radial = findByName(root, "radial");
 check("radial: nó encontrado", !!radial);
 if (radial) {
-  const g = radial.styles.gradient;
-  check("radial: gradient presente", !!g);
+  const layers = radial.styles.backgroundLayers;
+  check("radial: 1 camada", layers?.length === 1);
+  const g = layers?.[0]?.kind === "gradient" ? layers[0].gradient : null;
   check("radial: type === radial", g?.type === "radial");
   check("radial: center presente", !!g?.center);
   check("radial: >= 2 stops", (g?.stops?.length ?? 0) >= 2);
 }
 
-// --- conic-gradient ---
+// --- conic-gradient (camada única) ---
 const conic = findByName(root, "conic");
 check("conic: nó encontrado", !!conic);
 if (conic) {
-  const g = conic.styles.gradient;
-  check("conic: gradient presente", !!g);
+  const layers = conic.styles.backgroundLayers;
+  const g = layers?.[0]?.kind === "gradient" ? layers[0].gradient : null;
   check("conic: type === conic", g?.type === "conic");
   check("conic: 3 stops", g?.stops?.length === 3);
+}
+
+// --- múltiplas camadas empilhadas ---
+const stacked = findByName(root, "stacked-bg");
+check("stacked-bg: nó encontrado", !!stacked);
+if (stacked) {
+  const layers = stacked.styles.backgroundLayers;
+  check("stacked-bg: 2 camadas", layers?.length === 2);
+  if (layers?.length === 2) {
+    // CSS lista o topo primeiro → camada 0 = linear; camada 1 = radial.
+    check("stacked-bg: camada 0 gradiente linear", layers[0].kind === "gradient" && layers[0].gradient.type === "linear");
+    check("stacked-bg: camada 1 gradiente radial", layers[1].kind === "gradient" && layers[1].gradient.type === "radial");
+  }
 }
 
 if (failures.length) {

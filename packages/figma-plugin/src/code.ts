@@ -81,17 +81,22 @@ async function buildElement(
   const s = n.styles;
   const fills: Paint[] = [];
 
+  // backgroundColor pinta atrás de tudo (primeiro no array = fundo no Figma).
   if (s.backgroundColor) {
     const c = parseRgba(s.backgroundColor);
     if (c) fills.push({ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a });
   }
-  if (s.gradient) {
-    const g = gradientPaint(s.gradient);
-    if (g) fills.push(g);
-  }
-  if (s.backgroundImage && s.backgroundImage.startsWith("data:")) {
-    const img = imageFromDataUrl(s.backgroundImage);
-    if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: "FILL" });
+  // Camadas: CSS lista o topo primeiro; no Figma o último fill fica no topo,
+  // então empilhamos em ordem reversa.
+  for (let i = s.backgroundLayers.length - 1; i >= 0; i--) {
+    const layer = s.backgroundLayers[i];
+    if (layer.kind === "gradient") {
+      const g = gradientPaint(layer.gradient);
+      if (g) fills.push(g);
+    } else if (layer.src.startsWith("data:")) {
+      const img = imageFromDataUrl(layer.src);
+      if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: "FILL" });
+    }
   }
   f.fills = fills;
 

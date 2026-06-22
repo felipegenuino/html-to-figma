@@ -47,6 +47,12 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.6)
+
+- **Múltiplas camadas de background**: `background-image` com várias camadas
+  (ex.: gradiente sobre imagem, gradientes empilhados) é capturado como lista
+  ordenada e empilhado como `fills` no Figma, na ordem correta de pintura.
+
 ## Já resolvido (v0.5)
 
 - **Bordas por lado**: cada lado (`top`/`right`/`bottom`/`left`) é capturado com
@@ -89,8 +95,9 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
 ## Limitações conhecidas
 
-- Gradientes: uma camada de `background-image` (múltiplas camadas empilhadas não);
-  radial/conic com forma/tamanho não-circular e posições por keyword são aproximados.
+- Gradientes radial/conic: forma/tamanho não-circular e posições por keyword são
+  aproximados. `background-size`/`background-position` por camada não são aplicados
+  (imagens usam `scaleMode FILL`); só a ordem de empilhamento é fiel.
 - Bordas multicolor: cantos arredondados ficam aproximados (overlays retangulares
   não seguem o raio); `dashed`/`dotted` viram sólido nos overlays.
 - Pseudo-elementos: geometria aproximada (sem caixa real no DOM); `content`
@@ -105,4 +112,4 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 - Grid com posicionamento explícito (`grid-row`/`grid-column`) e tracks não-uniformes.
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
-- Múltiplas camadas de `background-image` (gradientes/imagens empilhados).
+- `background-size`/`background-position` por camada (hoje tudo usa `FILL`).

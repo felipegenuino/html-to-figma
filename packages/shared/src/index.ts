@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 4 as const;
+export const SCHEMA_VERSION = 5 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -110,8 +110,11 @@ export interface AutoLayout {
 
 export interface ElementStyles {
   backgroundColor: string | null; // rgba() ou null se transparente
-  backgroundImage: string | null; // data URL/URL se houver bg-image
-  gradient: Gradient | null;
+  /**
+   * Camadas de background-image, na ordem do CSS (índice 0 = topo, na frente).
+   * Vazio quando não há background-image. backgroundColor pinta atrás de tudo.
+   */
+  backgroundLayers: BackgroundLayer[];
   /** Bordas por lado (null quando nenhum lado tem borda visível). */
   borders: Borders | null;
   borderRadius: BorderRadius;
@@ -170,6 +173,11 @@ export interface Shadow {
   color: string;
   inset: boolean;
 }
+
+/** Uma camada de background-image: imagem (data URL) ou gradiente. */
+export type BackgroundLayer =
+  | { kind: "image"; src: string }
+  | { kind: "gradient"; gradient: Gradient };
 
 export interface Gradient {
   type: "linear" | "radial" | "conic";

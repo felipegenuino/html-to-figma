@@ -12,6 +12,7 @@ import type {
   SideBorder,
   Shadow,
   Gradient,
+  BackgroundLayer,
   Rect,
   AutoLayout,
 } from "@h2f/shared";
@@ -375,7 +376,7 @@ async function pseudoNode(
   if (w < 1 || h < 1) return null;
   const styles = await pseudoStyles(pcs, w, h);
   const visible =
-    styles.backgroundColor || styles.backgroundImage || styles.gradient || styles.borders;
+    styles.backgroundColor || styles.backgroundLayers.length > 0 || styles.borders;
   if (!visible) return null;
   return { type: "element", tag: which, name, rect: { x, y, width: w, height: h }, styles, children: [] };
 }
@@ -389,19 +390,13 @@ async function pseudoStyles(
   const bg = pcs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  let backgroundImage: string | null = null;
-  let gradient: Gradient | null = null;
-  const bgi = pcs.backgroundImage;
-  if (bgi && bgi !== "none") {
-    const urlMatch = bgi.match(/url\(["']?([^"')]+)["']?\)/);
-    if (urlMatch) backgroundImage = await toDataURL(urlMatch[1], w, h);
-    else gradient = parseGradient(bgi);
-  }
+  const backgroundLayers = await parseBackgroundLayers(pcs.backgroundImage, (url) =>
+    toDataURL(url, w, h)
+  );
 
   return {
     backgroundColor: transparent ? null : bg,
-    backgroundImage,
-    gradient,
+    backgroundLayers,
     borders: parseBorders(pcs),
     borderRadius: parseRadius(pcs),
     boxShadow: parseShadows(pcs.boxShadow),
@@ -718,8 +713,7 @@ function svgNode(el: SVGSVGElement, r: DOMRect): SvgNode {
 function defaultStyles(): ElementStyles {
   return {
     backgroundColor: null,
-    backgroundImage: null,
-    gradient: null,
+    backgroundLayers: [],
     borders: null,
     borderRadius: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 },
     boxShadow: [],
@@ -737,23 +731,14 @@ async function elementStyles(
   const bg = cs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  let backgroundImage: string | null = null;
-  let gradient: Gradient | null = null;
-  const bgi = cs.backgroundImage;
-  if (bgi && bgi !== "none") {
-    const urlMatch = bgi.match(/url\(["']?([^"')]+)["']?\)/);
-    if (urlMatch) {
-      const r = el.getBoundingClientRect();
-      backgroundImage = await toDataURL(urlMatch[1], r.width, r.height);
-    } else {
-      gradient = parseGradient(bgi);
-    }
-  }
+  const backgroundLayers = await parseBackgroundLayers(cs.backgroundImage, (url) => {
+    const r = el.getBoundingClientRect();
+    return toDataURL(url, r.width, r.height);
+  });
 
   return {
     backgroundColor: transparent ? null : bg,
-    backgroundImage,
-    gradient,
+    backgroundLayers,
     borders: parseBorders(cs),
     borderRadius: parseRadius(cs),
     boxShadow: parseShadows(cs.boxShadow),
@@ -851,6 +836,30 @@ function parseShadows(v: string): Shadow[] {
     const [offsetX, offsetY, blur = 0, spread = 0] = nums;
     return [{ offsetX, offsetY, blur, spread, color, inset }];
   });
+}
+
+/**
+ * Separa `background-image` em camadas (ordem do CSS: índice 0 = topo) e
+ * resolve cada uma: `url(...)` → imagem (via resolveImage), gradiente → Gradient.
+ * Camadas que não resolvem (imagem falha, gradiente null) são descartadas.
+ */
+async function parseBackgroundLayers(
+  bgi: string,
+  resolveImage: (url: string) => Promise<string | null>
+): Promise<BackgroundLayer[]> {
+  if (!bgi || bgi === "none") return [];
+  const layers: BackgroundLayer[] = [];
+  for (const part of splitTopLevel(bgi)) {
+    const urlMatch = part.match(/url\(["']?([^"')]+)["']?\)/);
+    if (urlMatch) {
+      const src = await resolveImage(urlMatch[1]);
+      if (src) layers.push({ kind: "image", src });
+    } else {
+      const gradient = parseGradient(part);
+      if (gradient) layers.push({ kind: "gradient", gradient });
+    }
+  }
+  return layers;
 }
 
 const DEFAULT_CENTER = { x: 0.5, y: 0.5 };
