@@ -238,12 +238,22 @@ function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]
   f.gridRowCount = Math.max(f.gridRowCount, maxRow);
   f.gridItemsPositioning = "MANUAL";
 
+  // Duas passadas: primeiro encolhe os spans para 1 e ancora todos os filhos;
+  // só depois cresce os spans. Crescer um span enquanto outro filho ainda está
+  // numa coluna/linha adjacente faz o Figma lançar erro — com todos ancorados e
+  // span 1, cada span cresce para células que ficam livres no layout final.
+  for (const { node, area } of children) {
+    if (!("setGridChildPosition" in node)) continue;
+    const gc = node as unknown as GridPositionable;
+    gc.gridColumnSpan = 1;
+    gc.gridRowSpan = 1;
+    gc.setGridChildPosition(area.rowStart, area.columnStart);
+  }
   for (const { node, area } of children) {
     if (!("setGridChildPosition" in node)) continue;
     const gc = node as unknown as GridPositionable;
     gc.gridColumnSpan = area.columnSpan;
     gc.gridRowSpan = area.rowSpan;
-    gc.setGridChildPosition(area.rowStart, area.columnStart);
   }
 }
 
