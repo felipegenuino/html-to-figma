@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 3 as const;
+export const SCHEMA_VERSION = 4 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -112,7 +112,8 @@ export interface ElementStyles {
   backgroundColor: string | null; // rgba() ou null se transparente
   backgroundImage: string | null; // data URL/URL se houver bg-image
   gradient: Gradient | null;
-  border: Border | null;
+  /** Bordas por lado (null quando nenhum lado tem borda visível). */
+  borders: Borders | null;
   borderRadius: BorderRadius;
   boxShadow: Shadow[];
   opacity: number;
@@ -139,10 +140,19 @@ export interface TextStyles {
   textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
 }
 
-export interface Border {
+/** Uma borda de um lado. */
+export interface SideBorder {
   width: number;
-  color: string;
+  color: string; // rgba()
   style: "solid" | "dashed" | "dotted";
+}
+
+/** Bordas por lado; cada lado é null quando não tem borda visível. */
+export interface Borders {
+  top: SideBorder | null;
+  right: SideBorder | null;
+  bottom: SideBorder | null;
+  left: SideBorder | null;
 }
 
 export interface BorderRadius {
@@ -162,8 +172,11 @@ export interface Shadow {
 }
 
 export interface Gradient {
-  type: "linear";
-  angle: number; // graus
+  type: "linear" | "radial" | "conic";
+  /** linear: direção em graus; conic: from-angle; radial: 0 (não usado). */
+  angle: number;
+  /** Centro 0..1 para radial/conic; linear ignora (default 0.5/0.5). */
+  center: { x: number; y: number };
   stops: { color: string; position: number }[]; // position 0..1
 }
 

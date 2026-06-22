@@ -8,6 +8,8 @@ import type {
   ElementStyles,
   TextStyles,
   BorderRadius,
+  Borders,
+  SideBorder,
   Shadow,
   Gradient,
   Rect,
@@ -373,7 +375,7 @@ async function pseudoNode(
   if (w < 1 || h < 1) return null;
   const styles = await pseudoStyles(pcs, w, h);
   const visible =
-    styles.backgroundColor || styles.backgroundImage || styles.gradient || styles.border;
+    styles.backgroundColor || styles.backgroundImage || styles.gradient || styles.borders;
   if (!visible) return null;
   return { type: "element", tag: which, name, rect: { x, y, width: w, height: h }, styles, children: [] };
 }
@@ -396,23 +398,11 @@ async function pseudoStyles(
     else gradient = parseGradient(bgi);
   }
 
-  const bw = parseFloat(pcs.borderTopWidth);
-  const border =
-    bw > 0 && pcs.borderTopStyle !== "none"
-      ? {
-          width: bw,
-          color: pcs.borderTopColor,
-          style: (["dashed", "dotted"].includes(pcs.borderTopStyle)
-            ? pcs.borderTopStyle
-            : "solid") as "solid" | "dashed" | "dotted",
-        }
-      : null;
-
   return {
     backgroundColor: transparent ? null : bg,
     backgroundImage,
     gradient,
-    border,
+    borders: parseBorders(pcs),
     borderRadius: parseRadius(pcs),
     boxShadow: parseShadows(pcs.boxShadow),
     opacity: Number(pcs.opacity),
@@ -730,7 +720,7 @@ function defaultStyles(): ElementStyles {
     backgroundColor: null,
     backgroundImage: null,
     gradient: null,
-    border: null,
+    borders: null,
     borderRadius: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 },
     boxShadow: [],
     opacity: 1,
@@ -760,23 +750,11 @@ async function elementStyles(
     }
   }
 
-  const bw = parseFloat(cs.borderTopWidth);
-  const border =
-    bw > 0 && cs.borderTopStyle !== "none"
-      ? {
-          width: bw,
-          color: cs.borderTopColor,
-          style: (["dashed", "dotted"].includes(cs.borderTopStyle)
-            ? cs.borderTopStyle
-            : "solid") as "solid" | "dashed" | "dotted",
-        }
-      : null;
-
   return {
     backgroundColor: transparent ? null : bg,
     backgroundImage,
     gradient,
-    border,
+    borders: parseBorders(cs),
     borderRadius: parseRadius(cs),
     boxShadow: parseShadows(cs.boxShadow),
     opacity: Number(cs.opacity),
@@ -800,6 +778,35 @@ function parseRotation(transform: string): number {
   // CSS: y cresce para baixo; ângulo horário positivo.
   const deg = (Math.atan2(b, a) * 180) / Math.PI;
   return Math.abs(deg) < 0.5 ? 0 : deg;
+}
+
+/** Lê os 4 lados da borda; retorna null se nenhum lado é visível. */
+function parseBorders(cs: CSSStyleDeclaration): Borders | null {
+  const side = (
+    width: string,
+    color: string,
+    style: string
+  ): SideBorder | null => {
+    const w = parseFloat(width);
+    if (!(w > 0) || style === "none") return null;
+    return {
+      width: w,
+      color,
+      style: (["dashed", "dotted"].includes(style) ? style : "solid") as
+        | "solid"
+        | "dashed"
+        | "dotted",
+    };
+  };
+  const borders: Borders = {
+    top: side(cs.borderTopWidth, cs.borderTopColor, cs.borderTopStyle),
+    right: side(cs.borderRightWidth, cs.borderRightColor, cs.borderRightStyle),
+    bottom: side(cs.borderBottomWidth, cs.borderBottomColor, cs.borderBottomStyle),
+    left: side(cs.borderLeftWidth, cs.borderLeftColor, cs.borderLeftStyle),
+  };
+  return borders.top || borders.right || borders.bottom || borders.left
+    ? borders
+    : null;
 }
 
 function parseRadius(cs: CSSStyleDeclaration): BorderRadius {
@@ -846,22 +853,77 @@ function parseShadows(v: string): Shadow[] {
   });
 }
 
-/** Parser básico de linear-gradient (cobre os casos comuns do computed style). */
+const DEFAULT_CENTER = { x: 0.5, y: 0.5 };
+
+/** Parser de linear/radial/conic-gradient (casos comuns do computed style). */
 function parseGradient(v: string): Gradient | null {
-  const m = v.match(/linear-gradient\((.+)\)$/);
-  if (!m) return null;
-  const parts = splitTopLevel(m[1]);
-  let angle = 180;
-  if (parts[0]?.endsWith("deg")) angle = parseFloat(parts.shift()!);
-  else if (parts[0]?.startsWith("to ")) {
-    const dir = parts.shift()!;
-    angle = { "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 }[dir] ?? 180;
+  const linear = v.match(/^(?:repeating-)?linear-gradient\((.+)\)$/);
+  const radial = v.match(/^(?:repeating-)?radial-gradient\((.+)\)$/);
+  const conic = v.match(/^(?:repeating-)?conic-gradient\((.+)\)$/);
+
+  if (linear) {
+    const parts = splitTopLevel(linear[1]);
+    let angle = 180;
+    if (parts[0]?.endsWith("deg")) angle = parseFloat(parts.shift()!);
+    else if (parts[0]?.startsWith("to ")) {
+      const dir = parts.shift()!;
+      angle = { "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 }[dir] ?? 180;
+    }
+    const stops = parseStops(parts);
+    return stops.length >= 2 ? { type: "linear", angle, center: DEFAULT_CENTER, stops } : null;
   }
-  const stops = parts.flatMap((p, i) => {
+
+  if (radial) {
+    const parts = splitTopLevel(radial[1]);
+    let center = DEFAULT_CENTER;
+    // Prefixo opcional de forma/tamanho/posição (sem rgb → não é um color stop).
+    if (parts[0] && !/rgba?\(|#[0-9a-fA-F]/.test(parts[0])) {
+      center = parseCenter(parts.shift()!);
+    }
+    const stops = parseStops(parts);
+    return stops.length >= 2 ? { type: "radial", angle: 0, center, stops } : null;
+  }
+
+  if (conic) {
+    const parts = splitTopLevel(conic[1]);
+    let angle = 0;
+    let center = DEFAULT_CENTER;
+    if (parts[0] && /from |\bat /.test(parts[0])) {
+      const head = parts.shift()!;
+      const fromMatch = head.match(/from\s+([\d.]+)deg/);
+      if (fromMatch) angle = parseFloat(fromMatch[1]);
+      center = parseCenter(head);
+    }
+    const stops = parseStops(parts);
+    return stops.length >= 2 ? { type: "conic", angle, center, stops } : null;
+  }
+
+  return null;
+}
+
+/** Extrai os color stops de uma lista de partes top-level já separadas. */
+function parseStops(parts: string[]): { color: string; position: number }[] {
+  return parts.flatMap((p, i) => {
     const color = p.match(/rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}/)?.[0];
     if (!color) return [];
     const pos = p.match(/([\d.]+)%/);
     return [{ color, position: pos ? Number(pos[1]) / 100 : i / Math.max(parts.length - 1, 1) }];
   });
-  return stops.length >= 2 ? { type: "linear", angle, stops } : null;
+}
+
+/** Resolve "at X% Y%" / keywords (center/left/top/right/bottom) → centro 0..1. */
+function parseCenter(head: string): { x: number; y: number } {
+  const at = head.match(/\bat\s+(.+)$/);
+  if (!at) return DEFAULT_CENTER;
+  const tokens = at[1].trim().split(/\s+/);
+  const axis = (tok: string | undefined, vertical: boolean): number => {
+    if (!tok) return 0.5;
+    const pct = tok.match(/([\d.]+)%/);
+    if (pct) return Number(pct[1]) / 100;
+    const map: Record<string, number> = vertical
+      ? { top: 0, center: 0.5, bottom: 1 }
+      : { left: 0, center: 0.5, right: 1 };
+    return map[tok] ?? 0.5;
+  };
+  return { x: axis(tokens[0], false), y: axis(tokens[1] ?? tokens[0], true) };
 }

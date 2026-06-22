@@ -6,6 +6,8 @@ import type {
   SvgNode,
   Rect,
   Gradient,
+  Borders,
+  SideBorder,
 } from "@h2f/shared";
 import { isCaptureDocument, parseRgba } from "@h2f/shared";
 
@@ -93,16 +95,7 @@ async function buildElement(
   }
   f.fills = fills;
 
-  if (s.border) {
-    const c = parseRgba(s.border.color);
-    if (c) {
-      f.strokes = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
-      f.strokeWeight = s.border.width;
-      f.strokeAlign = "INSIDE";
-      if (s.border.style === "dashed") f.dashPattern = [s.border.width * 3, s.border.width * 2];
-      if (s.border.style === "dotted") f.dashPattern = [s.border.width, s.border.width];
-    }
-  }
+  const borderOverlays = applyBorders(f, s.borders);
 
   f.topLeftRadius = s.borderRadius.topLeft;
   f.topRightRadius = s.borderRadius.topRight;
@@ -144,6 +137,12 @@ async function buildElement(
         place(c, child.rect, { x: n.rect.x, y: n.rect.y });
       }
     }
+  }
+
+  // Bordas multicolor: retângulos por lado, no topo da ordem de pintura.
+  for (const rect of borderOverlays) {
+    f.appendChild(rect);
+    if (s.layout) rect.layoutPositioning = "ABSOLUTE";
   }
 
   // transform: rotação (depois dos filhos, já que rotaciona o frame inteiro).
@@ -353,9 +352,70 @@ function buildSvg(n: SvgNode, offset: { x: number; y: number }): SceneNode {
   }
 }
 
+// ------------------------------------------------------------------ bordas
+
+const SIDES = ["top", "right", "bottom", "left"] as const;
+
+/**
+ * Aplica bordas por lado. Se todos os lados visíveis têm a mesma cor+estilo,
+ * usa larguras nativas por lado (barato). Se divergem, devolve retângulos por
+ * lado para o chamador anexar no topo (a cor por lado só existe assim no Figma).
+ */
+function applyBorders(f: FrameNode, borders: Borders | null): RectangleNode[] {
+  if (!borders) return [];
+  const visible = SIDES.map((side) => ({ side, b: borders[side] })).filter(
+    (s): s is { side: (typeof SIDES)[number]; b: SideBorder } => s.b !== null
+  );
+  if (visible.length === 0) return [];
+
+  const uniform = visible.every(
+    (s) => s.b.color === visible[0].b.color && s.b.style === visible[0].b.style
+  );
+
+  if (uniform) {
+    const b = visible[0].b;
+    const c = parseRgba(b.color);
+    if (!c) return [];
+    f.strokes = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+    f.strokeAlign = "INSIDE";
+    f.strokeTopWeight = borders.top?.width ?? 0;
+    f.strokeRightWeight = borders.right?.width ?? 0;
+    f.strokeBottomWeight = borders.bottom?.width ?? 0;
+    f.strokeLeftWeight = borders.left?.width ?? 0;
+    if (b.style === "dashed") f.dashPattern = [b.width * 3, b.width * 2];
+    if (b.style === "dotted") f.dashPattern = [b.width, b.width];
+    return [];
+  }
+
+  // Cores/estilos divergentes → um retângulo por lado.
+  const w = f.width;
+  const h = f.height;
+  const overlays: RectangleNode[] = [];
+  for (const { side, b } of visible) {
+    const c = parseRgba(b.color);
+    if (!c) continue;
+    const r = figma.createRectangle();
+    const geom =
+      side === "top"
+        ? { x: 0, y: 0, w, h: b.width }
+        : side === "bottom"
+        ? { x: 0, y: h - b.width, w, h: b.width }
+        : side === "left"
+        ? { x: 0, y: 0, w: b.width, h }
+        : { x: w - b.width, y: 0, w: b.width, h };
+    r.resize(Math.max(geom.w, 0.01), Math.max(geom.h, 0.01));
+    r.x = geom.x;
+    r.y = geom.y;
+    r.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+    r.name = `border-${side}`;
+    overlays.push(r);
+  }
+  return overlays;
+}
+
 // ----------------------------------------------------------------- gradient
 
-/** Converte ângulo CSS (0° = para cima, 90° = para a direita) em gradientTransform. */
+/** Converte um Gradient (linear/radial/conic) no GradientPaint do Figma. */
 function gradientPaint(g: Gradient): GradientPaint | null {
   const stops: ColorStop[] = [];
   for (const s of g.stops) {
@@ -364,7 +424,31 @@ function gradientPaint(g: Gradient): GradientPaint | null {
   }
   if (stops.length < 2) return null;
 
-  // Figma: transform identidade = gradiente da esquerda para a direita.
+  const cx = g.center.x;
+  const cy = g.center.y;
+
+  if (g.type === "radial") {
+    // Círculo/elipse centrado em (cx,cy) cobrindo a caixa (raio ~0.5 por eixo).
+    const gradientTransform: Transform = [
+      [0.5, 0, cx - 0.5],
+      [0, 0.5, cy - 0.5],
+    ];
+    return { type: "GRADIENT_RADIAL", gradientTransform, gradientStops: stops };
+  }
+
+  if (g.type === "conic") {
+    // GRADIENT_ANGULAR: rotação a partir do from-angle do CSS, centro em (cx,cy).
+    const rad = (g.angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const gradientTransform: Transform = [
+      [cos, -sin, cx - 0.5 * cos + 0.5 * sin],
+      [sin, cos, cy - 0.5 * sin - 0.5 * cos],
+    ];
+    return { type: "GRADIENT_ANGULAR", gradientTransform, gradientStops: stops };
+  }
+
+  // linear — Figma: transform identidade = gradiente da esquerda para a direita.
   // CSS 90deg = esquerda→direita, então rotacionamos (angle - 90).
   const rad = ((g.angle - 90) * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -373,7 +457,6 @@ function gradientPaint(g: Gradient): GradientPaint | null {
     [cos, -sin, 0.5 - 0.5 * cos + 0.5 * sin],
     [sin, cos, 0.5 - 0.5 * sin - 0.5 * cos],
   ];
-
   return { type: "GRADIENT_LINEAR", gradientTransform, gradientStops: stops };
 }
 

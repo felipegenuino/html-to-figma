@@ -33,6 +33,22 @@
   /* 6. Rotação */
   .rot { width: 100px; height: 40px; background: #ccf; transform: rotate(30deg); margin: 40px; }
 
+  /* 7. Borda só num lado (border-bottom) */
+  .single-border { width: 200px; height: 40px; background: #fff; border-bottom: 3px solid rgb(51, 51, 51); }
+
+  /* 8. Borda multicolor (acento border-left azul + resto cinza) */
+  .multi-border {
+    width: 200px; height: 40px; background: #fff;
+    border: 1px solid rgb(204, 204, 204);
+    border-left: 4px solid rgb(0, 102, 255);
+  }
+
+  /* 9. radial-gradient */
+  .radial { width: 120px; height: 120px; background: radial-gradient(circle at 50% 50%, rgb(255, 0, 0), rgb(0, 0, 255)); }
+
+  /* 10. conic-gradient */
+  .conic { width: 120px; height: 120px; background: conic-gradient(from 90deg at 50% 50%, rgb(255, 0, 0), rgb(0, 255, 0), rgb(0, 0, 255)); }
+
   section { margin: 20px; }
 </style>
 </head>
@@ -56,5 +72,10 @@
   <section class="bg"></section>
   <section class="pseudo">conteúdo</section>
   <section class="rot">girado</section>
+
+  <section class="single-border"></section>
+  <section class="multi-border"></section>
+  <section class="radial"></section>
+  <section class="conic"></section>
 </body>
 </html>

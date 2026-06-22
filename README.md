@@ -47,6 +47,16 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.5)
+
+- **Bordas por lado**: cada lado (`top`/`right`/`bottom`/`left`) é capturado com
+  largura/cor/estilo próprios. No Figma, lados com a mesma cor usam larguras
+  nativas por lado (`strokeTopWeight`…); cores divergentes (acento `border-left`,
+  etc.) viram retângulos finos por lado para preservar a cor exata.
+- **Gradientes radial/conic**: `radial-gradient` → `GRADIENT_RADIAL` e
+  `conic-gradient` → `GRADIENT_ANGULAR` (com centro e from-angle), além do
+  `linear-gradient` já existente.
+
 ## Já resolvido (v0.4)
 
 - **Grid**: `display: grid` vira Grid layout nativo do Figma (`layoutMode = GRID`)
@@ -79,7 +89,10 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
 ## Limitações conhecidas
 
-- Gradientes: só `linear-gradient` simples; borda uniforme (usa `border-top`).
+- Gradientes: uma camada de `background-image` (múltiplas camadas empilhadas não);
+  radial/conic com forma/tamanho não-circular e posições por keyword são aproximados.
+- Bordas multicolor: cantos arredondados ficam aproximados (overlays retangulares
+  não seguem o raio); `dashed`/`dotted` viram sólido nos overlays.
 - Pseudo-elementos: geometria aproximada (sem caixa real no DOM); `content`
   com `url()`/`counter()` não é resolvido.
 - `transform`: só rotação (escala/skew/`matrix3d` ignorados); conteúdo aninhado
@@ -92,4 +105,4 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 - Grid com posicionamento explícito (`grid-row`/`grid-column`) e tracks não-uniformes.
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
-- `radial-gradient`/`conic-gradient` e bordas por lado.
+- Múltiplas camadas de `background-image` (gradientes/imagens empilhados).
