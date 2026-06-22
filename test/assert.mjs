@@ -188,6 +188,17 @@ if (blend) {
   check("blend: blendMode multiply", blend.styles?.blendMode === "multiply");
 }
 
+// --- text-shadow ---
+const tshadow = findByName(root, "sombra");
+check("text-shadow: nó de texto encontrado", !!tshadow);
+if (tshadow) {
+  const sh = tshadow.styles?.textShadow?.[0];
+  check("text-shadow: 1 sombra", tshadow.styles?.textShadow?.length === 1);
+  check("text-shadow: offsetX 2", sh?.offsetX === 2);
+  check("text-shadow: offsetY 3", sh?.offsetY === 3);
+  check("text-shadow: blur 4", sh?.blur === 4);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

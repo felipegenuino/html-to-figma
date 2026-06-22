@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 10 as const;
+export const SCHEMA_VERSION = 11 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -161,6 +161,8 @@ export interface TextStyles {
   textAlign: "left" | "center" | "right" | "justify";
   textDecoration: "none" | "underline" | "line-through";
   textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
+  /** text-shadow → DROP_SHADOW no TextNode (spread/inset sempre 0/false). */
+  textShadow: Shadow[];
 }
 
 /** Uma borda de um lado. */

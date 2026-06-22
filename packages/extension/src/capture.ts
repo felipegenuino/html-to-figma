@@ -580,7 +580,25 @@ function textStylesFrom(cs: CSSStyleDeclaration): TextStyles {
     textTransform: (["uppercase", "lowercase", "capitalize"].includes(cs.textTransform)
       ? cs.textTransform
       : "none") as TextStyles["textTransform"],
+    textShadow: parseTextShadows(cs.textShadow),
   };
+}
+
+/** text-shadow → sombras (sem spread/inset). Cor pode vir antes ou depois. */
+function parseTextShadows(v: string): Shadow[] {
+  if (!v || v === "none") return [];
+  return splitTopLevel(v).flatMap((part) => {
+    const color = part.match(/rgba?\([^)]+\)/)?.[0] ?? "rgba(0,0,0,0.5)";
+    const nums = part
+      .replace(/rgba?\([^)]+\)/, "")
+      .trim()
+      .split(/\s+/)
+      .map(parseFloat)
+      .filter((n) => !isNaN(n));
+    if (nums.length < 2) return [];
+    const [offsetX, offsetY, blur = 0] = nums;
+    return [{ offsetX, offsetY, blur, spread: 0, color, inset: false }];
+  });
 }
 
 // ------------------------------------------------------------------ imagens

@@ -364,6 +364,20 @@ async function buildText(
   const c = parseRgba(s.color);
   if (c) t.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
 
+  t.effects = s.textShadow.flatMap((sh): Effect[] => {
+    const sc = parseRgba(sh.color);
+    if (!sc) return [];
+    return [{
+      type: "DROP_SHADOW",
+      color: { r: sc.r, g: sc.g, b: sc.b, a: sc.a },
+      offset: { x: sh.offsetX, y: sh.offsetY },
+      radius: sh.blur,
+      spread: 0,
+      visible: true,
+      blendMode: "NORMAL",
+    }];
+  });
+
   if (s.lineHeight) t.lineHeight = { value: s.lineHeight, unit: "PIXELS" };
   t.letterSpacing = { value: s.letterSpacing, unit: "PIXELS" };
   t.textAlignHorizontal = (
