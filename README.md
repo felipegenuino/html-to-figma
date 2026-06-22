@@ -47,6 +47,12 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.9)
+
+- **Blur**: `filter: blur()` vira `LAYER_BLUR` e `backdrop-filter: blur()` vira
+  `BACKGROUND_BLUR` (glassmorphism) — efeitos nativos do Figma, sem rasterizar.
+  Antes o `backdrop-filter` era perdido e `filter: blur` virava screenshot.
+
 ## Já resolvido (v0.8)
 
 - **Grid com posicionamento explícito**: a célula de cada item (`grid-column`/
@@ -119,6 +125,8 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 - `transform`: só rotação (escala/skew/`matrix3d` ignorados); conteúdo aninhado
   de elementos rotacionados pode ficar levemente desalinhado.
 - Screenshot por elemento só funciona se o elemento couber no viewport visível.
+- Só `blur()` vira efeito nativo; outros filtros (`brightness`, `grayscale`,
+  `drop-shadow`…) continuam no fallback de screenshot.
 - `iframes` continuam ignorados; fontes precisam existir no Figma (senão, Inter).
 
 ## Próximos passos

@@ -60,6 +60,10 @@
   .grid-exp > .cx { background: #af8; }
   .grid-exp > .cy { background: #f8a; }
 
+  /* 14. Blur: filter (layer) e backdrop-filter (glass) */
+  .blurred { width: 120px; height: 80px; background: #33aa77; filter: blur(4px); }
+  .glass { width: 120px; height: 80px; background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(8px); }
+
   /* 11. Múltiplas camadas: gradiente linear (topo) sobre radial (fundo) */
   .stacked-bg {
     width: 120px; height: 120px;
@@ -99,5 +103,7 @@
   <section class="stacked-bg"></section>
   <section class="grid-nu"><div class="cell">a</div><div class="cell">b</div><div class="cell">c</div></section>
   <section class="grid-exp"><div class="wide">wide</div><div class="tall">tall</div><div class="cx">x</div><div class="cy">y</div></section>
+  <section class="blurred"></section>
+  <section class="glass"></section>
 </body>
 </html>

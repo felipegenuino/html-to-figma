@@ -474,6 +474,8 @@ async function pseudoStyles(
     borders: parseBorders(pcs),
     borderRadius: parseRadius(pcs),
     boxShadow: parseShadows(pcs.boxShadow),
+    layerBlur: parseBlur(pcs.filter),
+    backgroundBlur: parseBlur(pcs.backdropFilter),
     opacity: Number(pcs.opacity),
     overflowHidden: pcs.overflow === "hidden" || pcs.overflow === "clip",
     layout: null,
@@ -706,10 +708,19 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 
 // ----------------------------------------------------------- screenshot fallback
 
+/** Raio de um `blur(Npx)` isolado; 0 se o valor não é exatamente um blur. */
+function parseBlur(value: string): number {
+  if (!value || value === "none") return 0;
+  const m = value.trim().match(/^blur\(([\d.]+)px\)$/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
 /** Elementos cuja reconstrução por nós é fraca → melhor rasterizar. */
 function shouldScreenshot(el: Element, cs: CSSStyleDeclaration, r: DOMRect): boolean {
   const tag = el.tagName;
-  const candidate = tag === "CANVAS" || tag === "VIDEO" || (cs.filter !== "none" && !!cs.filter);
+  // filter: blur puro vira efeito nativo (LAYER_BLUR), não screenshot.
+  const filterCandidate = cs.filter !== "none" && !!cs.filter && parseBlur(cs.filter) === 0;
+  const candidate = tag === "CANVAS" || tag === "VIDEO" || filterCandidate;
   if (!candidate) return false;
   // Precisa caber no viewport (captureVisibleTab só pega a área visível).
   return r.width >= 1 && r.height >= 1 && r.width <= innerWidth && r.height <= innerHeight;
@@ -791,6 +802,8 @@ function defaultStyles(): ElementStyles {
     borders: null,
     borderRadius: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 },
     boxShadow: [],
+    layerBlur: 0,
+    backgroundBlur: 0,
     opacity: 1,
     overflowHidden: false,
     layout: null,
@@ -816,6 +829,8 @@ async function elementStyles(
     borders: parseBorders(cs),
     borderRadius: parseRadius(cs),
     boxShadow: parseShadows(cs.boxShadow),
+    layerBlur: parseBlur(cs.filter),
+    backgroundBlur: parseBlur(cs.backdropFilter),
     opacity: Number(cs.opacity),
     overflowHidden: cs.overflow === "hidden" || cs.overflow === "clip",
     layout: null, // preenchido pelo walkElement

@@ -154,6 +154,19 @@ if (cy) {
   check("grid-exp: .cy auto → (row1,col1)", a?.rowStart === 1 && a?.columnStart === 1 && a?.columnSpan === 1);
 }
 
+// --- blur (filter / backdrop-filter) ---
+const blurred = findByName(root, "blurred");
+check("blurred: nó encontrado", !!blurred);
+if (blurred) {
+  check("blurred: layerBlur === 4", blurred.styles?.layerBlur === 4);
+  check("blurred: backgroundBlur 0", blurred.styles?.backgroundBlur === 0);
+}
+const glass = findByName(root, "glass");
+check("glass: nó encontrado", !!glass);
+if (glass) {
+  check("glass: backgroundBlur === 8", glass.styles?.backgroundBlur === 8);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

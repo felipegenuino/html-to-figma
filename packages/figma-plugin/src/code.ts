@@ -107,7 +107,7 @@ async function buildElement(
   f.bottomRightRadius = s.borderRadius.bottomRight;
   f.bottomLeftRadius = s.borderRadius.bottomLeft;
 
-  f.effects = s.boxShadow.flatMap((sh): Effect[] => {
+  const shadowEffects = s.boxShadow.flatMap((sh): Effect[] => {
     const c = parseRgba(sh.color);
     if (!c) return [];
     return [{
@@ -120,6 +120,12 @@ async function buildElement(
       blendMode: "NORMAL",
     }];
   });
+  const blurEffects: Effect[] = [];
+  if (s.layerBlur > 0)
+    blurEffects.push({ type: "LAYER_BLUR", radius: s.layerBlur, visible: true, blurType: "NORMAL" });
+  if (s.backgroundBlur > 0)
+    blurEffects.push({ type: "BACKGROUND_BLUR", radius: s.backgroundBlur, visible: true, blurType: "NORMAL" });
+  f.effects = [...shadowEffects, ...blurEffects];
 
   f.opacity = s.opacity;
   f.clipsContent = s.overflowHidden;

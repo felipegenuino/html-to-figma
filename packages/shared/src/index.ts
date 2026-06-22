@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 7 as const;
+export const SCHEMA_VERSION = 8 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -133,6 +133,10 @@ export interface ElementStyles {
   borders: Borders | null;
   borderRadius: BorderRadius;
   boxShadow: Shadow[];
+  /** filter: blur(px) → LAYER_BLUR no Figma. 0 = nenhum. */
+  layerBlur: number;
+  /** backdrop-filter: blur(px) → BACKGROUND_BLUR no Figma. 0 = nenhum. */
+  backgroundBlur: number;
   opacity: number;
   overflowHidden: boolean;
   layout: AutoLayout | null;
