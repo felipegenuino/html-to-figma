@@ -28,6 +28,8 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   const prevX = scrollX;
   const prevY = scrollY;
   await preloadLazyContent();
+  const restoreReveal = forceRevealHidden();
+  await nextFrame();
   try {
     const node = await walkElement(root);
     return {
@@ -43,8 +45,39 @@ export async function capture(root: Element): Promise<CaptureDocument> {
       root: node ?? emptyRoot(),
     };
   } finally {
+    restoreReveal();
     scrollTo(prevX, prevY);
   }
+}
+
+/**
+ * Neutraliza animações de scroll-reveal: muitos sites escondem conteúdo com
+ * `opacity:0`/`visibility:hidden`/`content-visibility:auto` até o elemento entrar
+ * na viewport. Como capturamos num único snapshot, força esses estados
+ * TOTALMENTE escondidos a visíveis — sem tocar opacity parcial (ex.: 0.8) nem
+ * `transform` (preserva rotação). Devolve uma função que restaura o original.
+ */
+function forceRevealHidden(): () => void {
+  const undo: (() => void)[] = [];
+  const force = (el: HTMLElement, prop: string, val: string) => {
+    const prev = el.style.getPropertyValue(prop);
+    const prevPriority = el.style.getPropertyPriority(prop);
+    el.style.setProperty(prop, val, "important");
+    undo.push(() =>
+      prev
+        ? el.style.setProperty(prop, prev, prevPriority)
+        : el.style.removeProperty(prop)
+    );
+  };
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+    if (el.tagName === "SCRIPT" || el.tagName === "STYLE") continue;
+    const cs = getComputedStyle(el);
+    if (parseFloat(cs.opacity) === 0) force(el, "opacity", "1");
+    if (cs.visibility === "hidden") force(el, "visibility", "visible");
+    if (cs.getPropertyValue("content-visibility") === "auto")
+      force(el, "content-visibility", "visible");
+  }
+  return () => undo.forEach((f) => f());
 }
 
 function nextFrame(): Promise<void> {

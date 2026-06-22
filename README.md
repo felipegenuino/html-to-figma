@@ -47,6 +47,14 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.15)
+
+- **Scroll-reveal**: conteúdo escondido por animações de revelação
+  (`opacity:0`/`visibility:hidden`/`content-visibility:auto` até entrar na
+  viewport) é forçado visível antes da captura — sem corromper opacity parcial
+  (ex.: 0.8) nem rotação, e restaurando o original ao final. Resolve seções
+  vazias em sites com `.reveal`/AOS/etc.
+
 ## Já resolvido (v0.14)
 
 - **Estilo de `<img>`**: imagens (`<img>`) agora também levam `border`,

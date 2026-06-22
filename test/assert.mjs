@@ -223,6 +223,14 @@ if (imgStyled) {
   check("img-styled: shadow blur 8", imgStyled.boxShadow?.[0]?.blur === 8);
 }
 
+// --- conteúdo escondido por scroll-reveal deve ser forçado visível ---
+const revealed = findByName(root, "revelado");
+check("force-reveal: texto escondido foi capturado", !!revealed);
+// e a opacity parcial legítima (img 0.8) NÃO pode ser corrompida
+if (imgStyled) {
+  check("force-reveal: opacity parcial preservada (0.8)", imgStyled.opacity === 0.8);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);
