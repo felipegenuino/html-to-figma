@@ -112,6 +112,22 @@ if (stacked) {
   }
 }
 
+// --- grid com colunas não-uniformes ---
+const gridNu = findByName(root, "grid-nu");
+check("grid-nu: nó encontrado", !!gridNu);
+if (gridNu) {
+  const L = gridNu.styles.layout;
+  check("grid-nu: layout grid", L?.mode === "grid");
+  const cs = L?.columnSizes;
+  check("grid-nu: 3 columnSizes", cs?.length === 3);
+  if (cs?.length === 3) {
+    // 1fr 2fr 1fr → coluna do meio ~2x as das pontas.
+    check("grid-nu: coluna do meio maior", cs[1] > cs[0] && cs[1] > cs[2]);
+    check("grid-nu: pontas ~iguais", Math.abs(cs[0] - cs[2]) < 1);
+    check("grid-nu: proporção ~1:2:1", Math.abs(cs[1] / cs[0] - 2) < 0.15);
+  }
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

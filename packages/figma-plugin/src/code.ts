@@ -184,6 +184,16 @@ function applyRotation(
 }
 
 /** Configura Auto Layout (flex) ou Grid no frame, preservando o tamanho capturado. */
+/** Fixa o tamanho px de cada track capturada (deixa as demais em FLEX). */
+function applyTrackSizes(tracks: GridTrackSize[], sizes: number[]) {
+  for (let i = 0; i < sizes.length && i < tracks.length; i++) {
+    if (sizes[i] > 0) {
+      tracks[i].type = "FIXED";
+      tracks[i].value = sizes[i];
+    }
+  }
+}
+
 function applyLayout(f: FrameNode, L: NonNullable<ElementNode["styles"]["layout"]>, rect: Rect) {
   f.paddingTop = L.paddingTop;
   f.paddingRight = L.paddingRight;
@@ -196,6 +206,10 @@ function applyLayout(f: FrameNode, L: NonNullable<ElementNode["styles"]["layout"
     f.gridRowCount = Math.max(L.rows, 1);
     f.gridColumnGap = L.columnGap;
     f.gridRowGap = L.rowGap;
+    // Tracks não-uniformes: fixa o tamanho px de cada track capturada.
+    // Tracks sem tamanho permanecem FLEX (default).
+    applyTrackSizes(f.gridColumnSizes, L.columnSizes);
+    applyTrackSizes(f.gridRowSizes, L.rowSizes);
     f.resize(Math.max(rect.width, 0.01), Math.max(rect.height, 0.01));
     return;
   }

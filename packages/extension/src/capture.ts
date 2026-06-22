@@ -162,16 +162,20 @@ type Paddings = Pick<
   "paddingTop" | "paddingRight" | "paddingBottom" | "paddingLeft"
 >;
 
-/** Conta as tracks de um grid-template-* já resolvido pelo computed style. */
-function countTracks(template: string): number {
-  if (!template || template === "none") return 0;
-  // O computed style resolve em valores px/fr explícitos; remove nomes de linha
-  // entre colchetes (ex.: "[col-start] 240px [col-end]") antes de contar.
+/**
+ * Tamanhos (px) das tracks de um grid-template-* já resolvido pelo computed
+ * style. Remove nomes de linha `[...]` e converte cada track em número;
+ * descarta o que não resolve em px.
+ */
+function parseTracks(template: string): number[] {
+  if (!template || template === "none") return [];
   return template
     .replace(/\[[^\]]*\]/g, " ")
     .trim()
     .split(/\s+/)
-    .filter(Boolean).length;
+    .filter(Boolean)
+    .map((t) => parseFloat(t))
+    .filter((n) => !isNaN(n));
 }
 
 function gridLayout(
@@ -179,17 +183,19 @@ function gridLayout(
   paddings: Paddings,
   gapPx: (v: string) => number
 ): AutoLayout | null {
-  const columns = countTracks(cs.gridTemplateColumns);
-  const rows = countTracks(cs.gridTemplateRows);
+  const columnSizes = parseTracks(cs.gridTemplateColumns);
+  const rowSizes = parseTracks(cs.gridTemplateRows);
   // Sem colunas resolvidas (grid-auto-flow puro) não dá pra reconstruir a grade.
-  if (columns < 1) return null;
+  if (columnSizes.length < 1) return null;
   return {
     mode: "grid",
     direction: "horizontal",
     reverse: false,
     gap: 0,
-    columns,
-    rows: Math.max(rows, 1),
+    columns: columnSizes.length,
+    rows: Math.max(rowSizes.length, 1),
+    columnSizes,
+    rowSizes,
     rowGap: gapPx(cs.rowGap),
     columnGap: gapPx(cs.columnGap),
     ...paddings,
@@ -235,6 +241,8 @@ function flexLayout(
     gap: gapPx(gapStr),
     columns: 0,
     rows: 0,
+    columnSizes: [],
+    rowSizes: [],
     rowGap: 0,
     columnGap: 0,
     ...paddings,

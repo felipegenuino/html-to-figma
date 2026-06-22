@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 5 as const;
+export const SCHEMA_VERSION = 6 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -97,6 +97,9 @@ export interface AutoLayout {
   /** Grid: número de colunas/linhas e seus gaps (em px). */
   columns: number;
   rows: number;
+  /** Grid: tamanho px de cada track (já resolvido). Vazio = tracks FLEX uniformes. */
+  columnSizes: number[];
+  rowSizes: number[];
   rowGap: number;
   columnGap: number;
   paddingTop: number;

@@ -47,6 +47,13 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.7)
+
+- **Grid com tracks não-uniformes**: `grid-template-columns/rows` é capturado com
+  o tamanho px de cada track (já resolvido pelo computed style, inclusive `fr`) e
+  aplicado como tracks `FIXED` no Figma — `1fr 2fr 1fr`, `200px 1fr` etc. deixam
+  de virar colunas iguais.
+
 ## Já resolvido (v0.6)
 
 - **Múltiplas camadas de background**: `background-image` com várias camadas
@@ -109,7 +116,9 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
 ## Próximos passos
 
-- Grid com posicionamento explícito (`grid-row`/`grid-column`) e tracks não-uniformes.
+- Grid com posicionamento explícito (`grid-row`/`grid-column`) e spans — itens
+  hoje seguem o auto-flow do Figma; placement explícito exige emular o
+  auto-placement do CSS para grids mistos.
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
 - `background-size`/`background-position` por camada (hoje tudo usa `FILL`).
