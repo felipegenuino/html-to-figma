@@ -47,6 +47,11 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.11)
+
+- **mix-blend-mode**: mapeado para o `blendMode` nativo do Figma (multiply,
+  screen, overlay, etc.). `normal` não altera o nó.
+
 ## Já resolvido (v0.10)
 
 - **background-size**: `cover` → `FILL` e `contain` → `FIT` por camada de imagem

@@ -130,6 +130,8 @@ async function buildElement(
   f.effects = [...shadowEffects, ...blurEffects];
 
   f.opacity = s.opacity;
+  const blend = cssToBlendMode(s.blendMode);
+  if (blend) f.blendMode = blend;
   f.clipsContent = s.overflowHidden;
 
   if (s.layout) applyLayout(f, s.layout, n.rect);
@@ -452,6 +454,21 @@ function buildSvg(n: SvgNode, offset: { x: number; y: number }): SceneNode {
     r.fills = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.9 } }];
     return r;
   }
+}
+
+// -------------------------------------------------------------- blend mode
+
+const BLEND_MODES = new Set<BlendMode>([
+  "NORMAL", "DARKEN", "MULTIPLY", "LINEAR_BURN", "COLOR_BURN", "LIGHTEN",
+  "SCREEN", "LINEAR_DODGE", "COLOR_DODGE", "OVERLAY", "SOFT_LIGHT", "HARD_LIGHT",
+  "DIFFERENCE", "EXCLUSION", "HUE", "SATURATION", "COLOR", "LUMINOSITY",
+]);
+
+/** mix-blend-mode CSS → BlendMode do Figma (ex.: "color-dodge" → COLOR_DODGE). */
+function cssToBlendMode(css: string | null): BlendMode | null {
+  if (!css) return null;
+  const m = css.toUpperCase().replace(/-/g, "_") as BlendMode;
+  return BLEND_MODES.has(m) ? m : null;
 }
 
 // ------------------------------------------------------------------ bordas

@@ -181,6 +181,13 @@ if (bgCover) {
   check("bg (cover): scaleMode FILL", l?.kind === "image" && l?.scaleMode === "FILL");
 }
 
+// --- mix-blend-mode ---
+const blend = findByName(root, "section.blend");
+check("blend: nó encontrado", !!blend);
+if (blend) {
+  check("blend: blendMode multiply", blend.styles?.blendMode === "multiply");
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

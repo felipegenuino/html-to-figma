@@ -478,6 +478,7 @@ async function pseudoStyles(
     boxShadow: parseShadows(pcs.boxShadow),
     layerBlur: parseBlur(pcs.filter),
     backgroundBlur: parseBlur(pcs.backdropFilter),
+    blendMode: parseBlendMode(pcs.mixBlendMode),
     opacity: Number(pcs.opacity),
     overflowHidden: pcs.overflow === "hidden" || pcs.overflow === "clip",
     layout: null,
@@ -710,6 +711,11 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 
 // ----------------------------------------------------------- screenshot fallback
 
+/** mix-blend-mode → valor CSS, ou null quando normal (não altera o nó). */
+function parseBlendMode(value: string): string | null {
+  return value && value !== "normal" ? value.trim() : null;
+}
+
 /** Raio de um `blur(Npx)` isolado; 0 se o valor não é exatamente um blur. */
 function parseBlur(value: string): number {
   if (!value || value === "none") return 0;
@@ -806,6 +812,7 @@ function defaultStyles(): ElementStyles {
     boxShadow: [],
     layerBlur: 0,
     backgroundBlur: 0,
+    blendMode: null,
     opacity: 1,
     overflowHidden: false,
     layout: null,
@@ -833,6 +840,7 @@ async function elementStyles(
     boxShadow: parseShadows(cs.boxShadow),
     layerBlur: parseBlur(cs.filter),
     backgroundBlur: parseBlur(cs.backdropFilter),
+    blendMode: parseBlendMode(cs.mixBlendMode),
     opacity: Number(cs.opacity),
     overflowHidden: cs.overflow === "hidden" || cs.overflow === "clip",
     layout: null, // preenchido pelo walkElement
