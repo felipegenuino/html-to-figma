@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1000px; font-family: Arial; }
+
+  /* 1. Flex row com um filho position:relative no meio (testa reorder por paint order) */
+  .flex-row { display: flex; flex-direction: row; gap: 20px; padding: 16px; background: #eee; }
+  .flex-row > .item { width: 100px; height: 60px; background: #cdf; }
+  .flex-row > .rel { position: relative; z-index: 1; background: #fcd; }
+
+  /* 2. CSS grid 3 colunas */
+  .grid { display: grid; grid-template-columns: 200px 200px 200px; gap: 12px; padding: 10px; background: #dfd; }
+  .grid > .card { height: 80px; background: #9c9; }
+
+  /* 3. Container normal (block) com filho absoluto sobreposto */
+  .stack { position: relative; height: 120px; background: #ffe; }
+  .stack > .abs { position: absolute; top: 10px; left: 30px; width: 80px; height: 80px; background: #f99; }
+
+  /* 4. Background-image (data URI) */
+  .bg {
+    width: 120px; height: 120px;
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzM2NiIvPjwvc3ZnPg==");
+    background-size: cover;
+  }
+
+  /* 5. Pseudo-elemento ::before com texto */
+  .pseudo { position: relative; width: 200px; height: 40px; background: #eef; }
+  .pseudo::before { content: "★ before"; color: #c00; font-size: 14px; }
+
+  /* 6. Rotação */
+  .rot { width: 100px; height: 40px; background: #ccf; transform: rotate(30deg); margin: 40px; }
+
+  section { margin: 20px; }
+</style>
+</head>
+<body>
+  <section class="flex-row">
+    <div class="item">A</div>
+    <div class="item">B</div>
+    <div class="rel">C (relative)</div>
+    <div class="item">D</div>
+  </section>
+
+  <section class="grid">
+    <div class="card">1</div><div class="card">2</div><div class="card">3</div>
+    <div class="card">4</div><div class="card">5</div><div class="card">6</div>
+  </section>
+
+  <section class="stack">
+    <div class="abs">abs</div>
+  </section>
+
+  <section class="bg"></section>
+  <section class="pseudo">conteúdo</section>
+  <section class="rot">girado</section>
+</body>
+</html>
