@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 11 as const;
+export const SCHEMA_VERSION = 12 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -158,6 +158,8 @@ export interface TextStyles {
   lineHeight: number | null; // px, null = auto
   letterSpacing: number; // px
   color: string; // rgba()
+  /** background-clip:text → gradiente aplicado como fill do texto (senão null). */
+  gradient: Gradient | null;
   textAlign: "left" | "center" | "right" | "justify";
   textDecoration: "none" | "underline" | "line-through";
   textTransform: "none" | "uppercase" | "lowercase" | "capitalize";

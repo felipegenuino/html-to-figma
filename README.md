@@ -47,6 +47,12 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.13)
+
+- **Texto com gradiente**: `background-clip: text` (+ gradiente) aplica o gradiente
+  como fill do TextNode e limpa o background do elemento — em vez de texto
+  transparente sobre um retângulo.
+
 ## Já resolvido (v0.12)
 
 - **text-shadow**: vira `DROP_SHADOW` no TextNode (offset, blur, cor) — múltiplas

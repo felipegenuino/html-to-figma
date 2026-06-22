@@ -60,6 +60,14 @@
   .grid-exp > .cx { background: #af8; }
   .grid-exp > .cy { background: #f8a; }
 
+  /* 18. Texto com gradiente (background-clip: text) */
+  .grad-text {
+    font-size: 28px; font-weight: 700;
+    background: linear-gradient(90deg, rgb(255, 0, 0), rgb(0, 0, 255));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+
   /* 17. text-shadow */
   .tshadow { font-size: 20px; color: rgb(34, 34, 34); text-shadow: 2px 3px 4px rgba(0, 0, 0, 0.5); }
 
@@ -122,5 +130,6 @@
   <section class="bg-contain"></section>
   <section class="blend"></section>
   <section class="tshadow">sombra</section>
+  <section class="grad-text">degrade</section>
 </body>
 </html>

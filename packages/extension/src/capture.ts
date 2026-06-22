@@ -559,8 +559,17 @@ function splitLines(t: Text): { content: string; rect: Rect }[] {
     .filter((l) => l.content.length > 0);
 }
 
+/** true quando o elemento recorta o background no texto (gradiente em texto). */
+function backgroundClipText(cs: CSSStyleDeclaration): boolean {
+  return (
+    cs.getPropertyValue("-webkit-background-clip").trim() === "text" ||
+    cs.getPropertyValue("background-clip").trim() === "text"
+  );
+}
+
 function textStylesFrom(cs: CSSStyleDeclaration): TextStyles {
   const lh = cs.lineHeight;
+  const clipGradient = backgroundClipText(cs) ? parseGradient(cs.backgroundImage) : null;
   return {
     fontFamily: cs.fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, ""),
     fontSize: parseFloat(cs.fontSize),
@@ -569,6 +578,7 @@ function textStylesFrom(cs: CSSStyleDeclaration): TextStyles {
     lineHeight: lh.endsWith("px") ? parseFloat(lh) : null,
     letterSpacing: cs.letterSpacing === "normal" ? 0 : parseFloat(cs.letterSpacing),
     color: cs.color,
+    gradient: clipGradient,
     textAlign: (["left", "center", "right", "justify"].includes(cs.textAlign)
       ? cs.textAlign
       : "left") as TextStyles["textAlign"],
@@ -845,13 +855,18 @@ async function elementStyles(
   const bg = cs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  const backgroundLayers = await parseBackgroundLayers(cs.backgroundImage, cs.backgroundSize, (url) => {
-    const r = el.getBoundingClientRect();
-    return toDataURL(url, r.width, r.height);
-  });
+  // background-clip:text: o background é recortado no texto (vira fill dos
+  // TextNodes filhos), então o próprio elemento não pinta nada.
+  const clipText = backgroundClipText(cs);
+  const backgroundLayers = clipText
+    ? []
+    : await parseBackgroundLayers(cs.backgroundImage, cs.backgroundSize, (url) => {
+        const r = el.getBoundingClientRect();
+        return toDataURL(url, r.width, r.height);
+      });
 
   return {
-    backgroundColor: transparent ? null : bg,
+    backgroundColor: transparent || clipText ? null : bg,
     backgroundLayers,
     borders: parseBorders(cs),
     borderRadius: parseRadius(cs),

@@ -199,6 +199,19 @@ if (tshadow) {
   check("text-shadow: blur 4", sh?.blur === 4);
 }
 
+// --- texto com gradiente (background-clip: text) ---
+const gradTextSection = findByName(root, "section.grad-text");
+check("grad-text: seção encontrada", !!gradTextSection);
+if (gradTextSection) {
+  check("grad-text: bg do elemento limpo", (gradTextSection.styles?.backgroundLayers?.length ?? 0) === 0);
+}
+const gradText = findByName(root, "degrade");
+check("grad-text: nó de texto encontrado", !!gradText);
+if (gradText) {
+  check("grad-text: texto tem gradiente", gradText.styles?.gradient?.type === "linear");
+  check("grad-text: gradiente >= 2 stops", (gradText.styles?.gradient?.stops?.length ?? 0) >= 2);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

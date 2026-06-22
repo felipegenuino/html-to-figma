@@ -361,8 +361,14 @@ async function buildText(
   t.characters = n.content;
   t.fontSize = s.fontSize;
 
-  const c = parseRgba(s.color);
-  if (c) t.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+  // background-clip:text → fill de gradiente; senão cor sólida.
+  const gp = s.gradient ? gradientPaint(s.gradient) : null;
+  if (gp) {
+    t.fills = [gp];
+  } else {
+    const c = parseRgba(s.color);
+    if (c) t.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+  }
 
   t.effects = s.textShadow.flatMap((sh): Effect[] => {
     const sc = parseRgba(sh.color);
