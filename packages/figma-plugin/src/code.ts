@@ -234,27 +234,39 @@ function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]
     maxCol = Math.max(maxCol, area.columnStart + area.columnSpan);
     maxRow = Math.max(maxRow, area.rowStart + area.rowSpan);
   }
-  f.gridColumnCount = Math.max(f.gridColumnCount, maxCol);
-  f.gridRowCount = Math.max(f.gridRowCount, maxRow);
   f.gridItemsPositioning = "MANUAL";
 
-  // Duas passadas: primeiro encolhe os spans para 1 e ancora todos os filhos;
-  // só depois cresce os spans. Crescer um span enquanto outro filho ainda está
-  // numa coluna/linha adjacente faz o Figma lançar erro — com todos ancorados e
-  // span 1, cada span cresce para células que ficam livres no layout final.
-  for (const { node, area } of children) {
-    if (!("setGridChildPosition" in node)) continue;
+  // O Figma rejeita posicionar/expandir um filho sobre células ocupadas, e mover
+  // um-a-um tem ciclos de colisão (A quer a célula de B e vice-versa). Quebramos
+  // os ciclos estacionando todos numa linha de rascunho vazia (grade expandida),
+  // depois movemos cada um para a célula final (área real já vazia) e por fim
+  // crescemos os spans; no fim removemos o espaço de rascunho.
+  // Contagens reais da grade (preserva colunas/linhas vazias além do maior span).
+  const baseCols = Math.max(f.gridColumnCount, maxCol);
+  const baseRows = Math.max(f.gridRowCount, maxRow);
+
+  const placeable = children.filter((c) => "setGridChildPosition" in c.node);
+  const parkRow = baseRows; // linha nova, além das reais
+  f.gridColumnCount = Math.max(baseCols, placeable.length, 1);
+  f.gridRowCount = baseRows + 1;
+
+  placeable.forEach(({ node }, i) => {
     const gc = node as unknown as GridPositionable;
     gc.gridColumnSpan = 1;
     gc.gridRowSpan = 1;
-    gc.setGridChildPosition(area.rowStart, area.columnStart);
+    gc.setGridChildPosition(parkRow, i);
+  });
+  for (const { node, area } of placeable) {
+    (node as unknown as GridPositionable).setGridChildPosition(area.rowStart, area.columnStart);
   }
-  for (const { node, area } of children) {
-    if (!("setGridChildPosition" in node)) continue;
+  for (const { node, area } of placeable) {
     const gc = node as unknown as GridPositionable;
     gc.gridColumnSpan = area.columnSpan;
     gc.gridRowSpan = area.rowSpan;
   }
+
+  f.gridColumnCount = baseCols;
+  f.gridRowCount = baseRows;
 }
 
 function applyLayout(f: FrameNode, L: NonNullable<ElementNode["styles"]["layout"]>, rect: Rect) {
