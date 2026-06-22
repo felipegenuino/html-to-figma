@@ -6,6 +6,8 @@ import type {
   SvgNode,
   Rect,
   Gradient,
+  Borders,
+  SideBorder,
 } from "@h2f/shared";
 import { isCaptureDocument, parseRgba } from "@h2f/shared";
 
@@ -79,30 +81,26 @@ async function buildElement(
   const s = n.styles;
   const fills: Paint[] = [];
 
+  // backgroundColor pinta atrás de tudo (primeiro no array = fundo no Figma).
   if (s.backgroundColor) {
     const c = parseRgba(s.backgroundColor);
     if (c) fills.push({ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a });
   }
-  if (s.gradient) {
-    const g = gradientPaint(s.gradient);
-    if (g) fills.push(g);
-  }
-  if (s.backgroundImage && s.backgroundImage.startsWith("data:")) {
-    const img = imageFromDataUrl(s.backgroundImage);
-    if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: "FILL" });
+  // Camadas: CSS lista o topo primeiro; no Figma o último fill fica no topo,
+  // então empilhamos em ordem reversa.
+  for (let i = s.backgroundLayers.length - 1; i >= 0; i--) {
+    const layer = s.backgroundLayers[i];
+    if (layer.kind === "gradient") {
+      const g = gradientPaint(layer.gradient);
+      if (g) fills.push(g);
+    } else if (layer.src.startsWith("data:")) {
+      const img = imageFromDataUrl(layer.src);
+      if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: "FILL" });
+    }
   }
   f.fills = fills;
 
-  if (s.border) {
-    const c = parseRgba(s.border.color);
-    if (c) {
-      f.strokes = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
-      f.strokeWeight = s.border.width;
-      f.strokeAlign = "INSIDE";
-      if (s.border.style === "dashed") f.dashPattern = [s.border.width * 3, s.border.width * 2];
-      if (s.border.style === "dotted") f.dashPattern = [s.border.width, s.border.width];
-    }
-  }
+  const borderOverlays = applyBorders(f, s.borders);
 
   f.topLeftRadius = s.borderRadius.topLeft;
   f.topRightRadius = s.borderRadius.topRight;
@@ -126,33 +124,16 @@ async function buildElement(
   f.opacity = s.opacity;
   f.clipsContent = s.overflowHidden;
 
-  if (s.layout) {
-    const L = s.layout;
-    f.layoutMode = L.direction === "horizontal" ? "HORIZONTAL" : "VERTICAL";
-    f.primaryAxisSizingMode = "FIXED";
-    f.counterAxisSizingMode = "FIXED";
-    f.itemSpacing = L.gap;
-    f.paddingTop = L.paddingTop;
-    f.paddingRight = L.paddingRight;
-    f.paddingBottom = L.paddingBottom;
-    f.paddingLeft = L.paddingLeft;
-    f.primaryAxisAlignItems = ({
-      start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN",
-    } as const)[L.justifyContent];
-    const counter = ({
-      start: "MIN", center: "CENTER", end: "MAX", baseline: "BASELINE", stretch: "MIN",
-    } as const)[L.alignItems];
-    // BASELINE so vale para HORIZONTAL
-    f.counterAxisAlignItems = counter === "BASELINE" && f.layoutMode === "VERTICAL" ? "MIN" : counter;
-    if (L.wrap && f.layoutMode === "HORIZONTAL") {
-      f.layoutWrap = "WRAP";
-      f.counterAxisSpacing = L.gap;
-    }
-    // garante o tamanho capturado depois de ligar o layout
-    f.resize(Math.max(n.rect.width, 0.01), Math.max(n.rect.height, 0.01));
-  }
+  if (s.layout) applyLayout(f, s.layout, n.rect);
 
-  for (const child of n.children) {
+  // flex *-reverse: o Figma não tem "reverse" — invertemos a ordem dos filhos.
+  const children =
+    s.layout && s.layout.mode === "flex" && s.layout.reverse
+      ? [...n.children].reverse()
+      : n.children;
+
+  const gridChildren: { node: SceneNode; area: NonNullable<CapturedNode["gridArea"]> }[] = [];
+  for (const child of children) {
     const c = await buildNode(child, { x: n.rect.x, y: n.rect.y });
     if (c) {
       f.appendChild(c);
@@ -160,10 +141,150 @@ async function buildElement(
       if (s.layout && child.absolute && "layoutPositioning" in c) {
         c.layoutPositioning = "ABSOLUTE";
         place(c, child.rect, { x: n.rect.x, y: n.rect.y });
+      } else if (child.gridArea) {
+        gridChildren.push({ node: c, area: child.gridArea });
       }
     }
   }
+
+  // Grid: aplica posicionamento explícito quando o grid de fato usa placement
+  // não-trivial (spans ou ordem não-sequencial); senão mantém o auto-flow.
+  if (s.layout && s.layout.mode === "grid") {
+    applyGridPlacement(f, s.layout.columns, gridChildren);
+  }
+
+  // Bordas multicolor: retângulos por lado, no topo da ordem de pintura.
+  for (const rect of borderOverlays) {
+    f.appendChild(rect);
+    if (s.layout) rect.layoutPositioning = "ABSOLUTE";
+  }
+
+  // transform: rotação (depois dos filhos, já que rotaciona o frame inteiro).
+  if (s.rotation) applyRotation(f, n.rect, offset, s.rotation);
   return f;
+}
+
+/**
+ * Aplica rotação CSS (horária) ao nó. O Figma rotaciona no sentido anti-horário
+ * em torno do canto superior-esquerdo, então invertemos o ângulo e reposicionamos
+ * o canto para manter o centro da caixa fixo no ponto capturado.
+ */
+function applyRotation(
+  node: SceneNode,
+  rect: Rect,
+  offset: { x: number; y: number },
+  cssDegrees: number
+) {
+  const theta = (-cssDegrees * Math.PI) / 180; // Figma: anti-horário positivo
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  // Centro desejado em coordenadas locais ao pai.
+  const cx = rect.x - offset.x + rect.width / 2;
+  const cy = rect.y - offset.y + rect.height / 2;
+  // Vetor centro→ canto antes da rotação e sua imagem rotacionada (matriz do Figma).
+  const vx = rect.width / 2;
+  const vy = rect.height / 2;
+  const rvx = cos * vx + sin * vy;
+  const rvy = -sin * vx + cos * vy;
+  if (!("rotation" in node)) return;
+  node.x = cx - rvx;
+  node.y = cy - rvy;
+  node.rotation = -cssDegrees;
+}
+
+/** Configura Auto Layout (flex) ou Grid no frame, preservando o tamanho capturado. */
+/** Fixa o tamanho px de cada track capturada (deixa as demais em FLEX). */
+function applyTrackSizes(tracks: GridTrackSize[], sizes: number[]) {
+  for (let i = 0; i < sizes.length && i < tracks.length; i++) {
+    if (sizes[i] > 0) {
+      tracks[i].type = "FIXED";
+      tracks[i].value = sizes[i];
+    }
+  }
+}
+
+type GridChild = { node: SceneNode; area: NonNullable<CapturedNode["gridArea"]> };
+
+interface GridPositionable {
+  gridColumnSpan: number;
+  gridRowSpan: number;
+  setGridChildPosition(rowIndex: number, columnIndex: number): void;
+}
+
+/**
+ * Posiciona filhos no grid. Se todos forem 1×1 na ordem row-major natural, é um
+ * auto-flow comum e nada muda (preserva o comportamento atual). Caso contrário,
+ * ativa MANUAL e fixa a célula (start + span) de cada filho.
+ */
+function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]): void {
+  if (children.length === 0) return;
+  const cols = Math.max(columns, 1);
+  const trivial = children.every(
+    (c, k) =>
+      c.area.columnSpan === 1 &&
+      c.area.rowSpan === 1 &&
+      c.area.columnStart === k % cols &&
+      c.area.rowStart === Math.floor(k / cols)
+  );
+  if (trivial) return;
+
+  let maxCol = 0;
+  let maxRow = 0;
+  for (const { area } of children) {
+    maxCol = Math.max(maxCol, area.columnStart + area.columnSpan);
+    maxRow = Math.max(maxRow, area.rowStart + area.rowSpan);
+  }
+  f.gridColumnCount = Math.max(f.gridColumnCount, maxCol);
+  f.gridRowCount = Math.max(f.gridRowCount, maxRow);
+  f.gridItemsPositioning = "MANUAL";
+
+  for (const { node, area } of children) {
+    if (!("setGridChildPosition" in node)) continue;
+    const gc = node as unknown as GridPositionable;
+    gc.gridColumnSpan = area.columnSpan;
+    gc.gridRowSpan = area.rowSpan;
+    gc.setGridChildPosition(area.rowStart, area.columnStart);
+  }
+}
+
+function applyLayout(f: FrameNode, L: NonNullable<ElementNode["styles"]["layout"]>, rect: Rect) {
+  f.paddingTop = L.paddingTop;
+  f.paddingRight = L.paddingRight;
+  f.paddingBottom = L.paddingBottom;
+  f.paddingLeft = L.paddingLeft;
+
+  if (L.mode === "grid") {
+    f.layoutMode = "GRID";
+    f.gridColumnCount = Math.max(L.columns, 1);
+    f.gridRowCount = Math.max(L.rows, 1);
+    f.gridColumnGap = L.columnGap;
+    f.gridRowGap = L.rowGap;
+    // Tracks não-uniformes: fixa o tamanho px de cada track capturada.
+    // Tracks sem tamanho permanecem FLEX (default).
+    applyTrackSizes(f.gridColumnSizes, L.columnSizes);
+    applyTrackSizes(f.gridRowSizes, L.rowSizes);
+    f.resize(Math.max(rect.width, 0.01), Math.max(rect.height, 0.01));
+    return;
+  }
+
+  f.layoutMode = L.direction === "horizontal" ? "HORIZONTAL" : "VERTICAL";
+  f.primaryAxisSizingMode = "FIXED";
+  f.counterAxisSizingMode = "FIXED";
+  f.itemSpacing = L.gap;
+  f.primaryAxisAlignItems = ({
+    start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN",
+  } as const)[L.justifyContent];
+  const counter = ({
+    start: "MIN", center: "CENTER", end: "MAX", baseline: "BASELINE", stretch: "MIN",
+  } as const)[L.alignItems];
+  // BASELINE so vale para HORIZONTAL
+  f.counterAxisAlignItems = counter === "BASELINE" && f.layoutMode === "VERTICAL" ? "MIN" : counter;
+  if (L.wrap && f.layoutMode === "HORIZONTAL") {
+    f.layoutWrap = "WRAP";
+    f.counterAxisSpacing = L.gap;
+  }
+  // garante o tamanho capturado depois de ligar o layout
+  f.resize(Math.max(rect.width, 0.01), Math.max(rect.height, 0.01));
 }
 
 // --------------------------------------------------------------------- text
@@ -303,9 +424,70 @@ function buildSvg(n: SvgNode, offset: { x: number; y: number }): SceneNode {
   }
 }
 
+// ------------------------------------------------------------------ bordas
+
+const SIDES = ["top", "right", "bottom", "left"] as const;
+
+/**
+ * Aplica bordas por lado. Se todos os lados visíveis têm a mesma cor+estilo,
+ * usa larguras nativas por lado (barato). Se divergem, devolve retângulos por
+ * lado para o chamador anexar no topo (a cor por lado só existe assim no Figma).
+ */
+function applyBorders(f: FrameNode, borders: Borders | null): RectangleNode[] {
+  if (!borders) return [];
+  const visible = SIDES.map((side) => ({ side, b: borders[side] })).filter(
+    (s): s is { side: (typeof SIDES)[number]; b: SideBorder } => s.b !== null
+  );
+  if (visible.length === 0) return [];
+
+  const uniform = visible.every(
+    (s) => s.b.color === visible[0].b.color && s.b.style === visible[0].b.style
+  );
+
+  if (uniform) {
+    const b = visible[0].b;
+    const c = parseRgba(b.color);
+    if (!c) return [];
+    f.strokes = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+    f.strokeAlign = "INSIDE";
+    f.strokeTopWeight = borders.top?.width ?? 0;
+    f.strokeRightWeight = borders.right?.width ?? 0;
+    f.strokeBottomWeight = borders.bottom?.width ?? 0;
+    f.strokeLeftWeight = borders.left?.width ?? 0;
+    if (b.style === "dashed") f.dashPattern = [b.width * 3, b.width * 2];
+    if (b.style === "dotted") f.dashPattern = [b.width, b.width];
+    return [];
+  }
+
+  // Cores/estilos divergentes → um retângulo por lado.
+  const w = f.width;
+  const h = f.height;
+  const overlays: RectangleNode[] = [];
+  for (const { side, b } of visible) {
+    const c = parseRgba(b.color);
+    if (!c) continue;
+    const r = figma.createRectangle();
+    const geom =
+      side === "top"
+        ? { x: 0, y: 0, w, h: b.width }
+        : side === "bottom"
+        ? { x: 0, y: h - b.width, w, h: b.width }
+        : side === "left"
+        ? { x: 0, y: 0, w: b.width, h }
+        : { x: w - b.width, y: 0, w: b.width, h };
+    r.resize(Math.max(geom.w, 0.01), Math.max(geom.h, 0.01));
+    r.x = geom.x;
+    r.y = geom.y;
+    r.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+    r.name = `border-${side}`;
+    overlays.push(r);
+  }
+  return overlays;
+}
+
 // ----------------------------------------------------------------- gradient
 
-/** Converte ângulo CSS (0° = para cima, 90° = para a direita) em gradientTransform. */
+/** Converte um Gradient (linear/radial/conic) no GradientPaint do Figma. */
 function gradientPaint(g: Gradient): GradientPaint | null {
   const stops: ColorStop[] = [];
   for (const s of g.stops) {
@@ -314,7 +496,41 @@ function gradientPaint(g: Gradient): GradientPaint | null {
   }
   if (stops.length < 2) return null;
 
-  // Figma: transform identidade = gradiente da esquerda para a direita.
+  const cx = g.center.x;
+  const cy = g.center.y;
+
+  if (g.type === "radial") {
+    // A gradientTransform do Figma mapeia geometria [0,1]² → espaço canônico
+    // (centro 0.5/0.5, raio 0.5). Logo o centro geométrico é M⁻¹·(0.5,0.5).
+    // Escolhemos a escala s para a cor final atingir o canto mais distante
+    // (default "farthest-corner" do CSS): s = 0.5 / dist(centro, canto distante).
+    const d = Math.max(
+      Math.hypot(cx, cy),
+      Math.hypot(1 - cx, cy),
+      Math.hypot(cx, 1 - cy),
+      Math.hypot(1 - cx, 1 - cy)
+    );
+    const s = d > 0 ? 0.5 / d : 0.5;
+    const gradientTransform: Transform = [
+      [s, 0, 0.5 - s * cx],
+      [0, s, 0.5 - s * cy],
+    ];
+    return { type: "GRADIENT_RADIAL", gradientTransform, gradientStops: stops };
+  }
+
+  if (g.type === "conic") {
+    // GRADIENT_ANGULAR: rotação a partir do from-angle do CSS, centro em (cx,cy).
+    const rad = (g.angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const gradientTransform: Transform = [
+      [cos, -sin, cx - 0.5 * cos + 0.5 * sin],
+      [sin, cos, cy - 0.5 * sin - 0.5 * cos],
+    ];
+    return { type: "GRADIENT_ANGULAR", gradientTransform, gradientStops: stops };
+  }
+
+  // linear — Figma: transform identidade = gradiente da esquerda para a direita.
   // CSS 90deg = esquerda→direita, então rotacionamos (angle - 90).
   const rad = ((g.angle - 90) * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -323,7 +539,6 @@ function gradientPaint(g: Gradient): GradientPaint | null {
     [cos, -sin, 0.5 - 0.5 * cos + 0.5 * sin],
     [sin, cos, 0.5 - 0.5 * sin - 0.5 * cos],
   ];
-
   return { type: "GRADIENT_LINEAR", gradientTransform, gradientStops: stops };
 }
 

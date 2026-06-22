@@ -8,10 +8,14 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 7 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
+
+/** Servidor relay local (WebSocket) para transferir capturas grandes sem clipboard. */
+export const RELAY_PORT = 7341 as const;
+export const RELAY_URL = `ws://localhost:${RELAY_PORT}` as const;
 
 export interface CaptureDocument {
   marker: typeof CLIPBOARD_MARKER;
@@ -49,6 +53,17 @@ interface BaseNode {
    * — no Figma recebe layoutPositioning ABSOLUTE e mantém x/y.
    */
   absolute?: boolean;
+  /**
+   * Célula no grid do pai (índices 0-based), derivada da geometria renderizada.
+   * Preenchido só para filhos diretos de um container grid que não sejam
+   * `absolute`. Usado pelo plugin para placement explícito (spans inclusos).
+   */
+  gridArea?: {
+    columnStart: number;
+    columnSpan: number;
+    rowStart: number;
+    rowSpan: number;
+  };
 }
 
 /** Container genérico (div, section, button...) → Frame no Figma. */
@@ -82,10 +97,22 @@ export interface SvgNode extends BaseNode {
   svg: string;
 }
 
-/** display:flex detectado → Auto Layout no Figma. */
+/** display:flex ou display:grid detectado → Auto Layout / Grid no Figma. */
 export interface AutoLayout {
+  /** "flex" → Auto Layout 1D; "grid" → Grid layout do Figma. */
+  mode: "flex" | "grid";
   direction: "horizontal" | "vertical";
+  /** flex-direction *-reverse: a ordem dos filhos é invertida no Figma. */
+  reverse: boolean;
   gap: number;
+  /** Grid: número de colunas/linhas e seus gaps (em px). */
+  columns: number;
+  rows: number;
+  /** Grid: tamanho px de cada track (já resolvido). Vazio = tracks FLEX uniformes. */
+  columnSizes: number[];
+  rowSizes: number[];
+  rowGap: number;
+  columnGap: number;
   paddingTop: number;
   paddingRight: number;
   paddingBottom: number;
@@ -97,14 +124,24 @@ export interface AutoLayout {
 
 export interface ElementStyles {
   backgroundColor: string | null; // rgba() ou null se transparente
-  backgroundImage: string | null; // data URL/URL se houver bg-image
-  gradient: Gradient | null;
-  border: Border | null;
+  /**
+   * Camadas de background-image, na ordem do CSS (índice 0 = topo, na frente).
+   * Vazio quando não há background-image. backgroundColor pinta atrás de tudo.
+   */
+  backgroundLayers: BackgroundLayer[];
+  /** Bordas por lado (null quando nenhum lado tem borda visível). */
+  borders: Borders | null;
   borderRadius: BorderRadius;
   boxShadow: Shadow[];
   opacity: number;
   overflowHidden: boolean;
   layout: AutoLayout | null;
+  /**
+   * Rotação em graus extraída de `transform` (sentido CSS, horário positivo).
+   * Quando != 0, o `rect` representa a caixa NÃO-transformada e o nó é
+   * rotacionado no Figma em torno do centro. 0 = sem rotação.
+   */
+  rotation: number;
 }
 
 export interface TextStyles {
@@ -120,10 +157,19 @@ export interface TextStyles {
   textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
 }
 
-export interface Border {
+/** Uma borda de um lado. */
+export interface SideBorder {
   width: number;
-  color: string;
+  color: string; // rgba()
   style: "solid" | "dashed" | "dotted";
+}
+
+/** Bordas por lado; cada lado é null quando não tem borda visível. */
+export interface Borders {
+  top: SideBorder | null;
+  right: SideBorder | null;
+  bottom: SideBorder | null;
+  left: SideBorder | null;
 }
 
 export interface BorderRadius {
@@ -142,9 +188,17 @@ export interface Shadow {
   inset: boolean;
 }
 
+/** Uma camada de background-image: imagem (data URL) ou gradiente. */
+export type BackgroundLayer =
+  | { kind: "image"; src: string }
+  | { kind: "gradient"; gradient: Gradient };
+
 export interface Gradient {
-  type: "linear";
-  angle: number; // graus
+  type: "linear" | "radial" | "conic";
+  /** linear: direção em graus; conic: from-angle; radial: 0 (não usado). */
+  angle: number;
+  /** Centro 0..1 para radial/conic; linear ignora (default 0.5/0.5). */
+  center: { x: number; y: number };
   stops: { color: string; position: number }[]; // position 0..1
 }
 

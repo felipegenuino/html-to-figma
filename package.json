@@ -7,7 +7,9 @@
   "scripts": {
     "build": "npm run build -w @h2f/extension && npm run build -w @h2f/figma-plugin",
     "build:extension": "npm run build -w @h2f/extension",
-    "build:plugin": "npm run build -w @h2f/figma-plugin"
+    "build:plugin": "npm run build -w @h2f/figma-plugin",
+    "relay": "node packages/relay/server.mjs",
+    "test:capture": "node test/run_capture.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.21.0",

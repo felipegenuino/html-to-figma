@@ -8,8 +8,11 @@ import type {
   ElementStyles,
   TextStyles,
   BorderRadius,
+  Borders,
+  SideBorder,
   Shadow,
   Gradient,
+  BackgroundLayer,
   Rect,
   AutoLayout,
 } from "@h2f/shared";
@@ -134,14 +137,145 @@ function paintOrderKey(cs: CSSStyleDeclaration): number {
 
 // -------------------------------------------------------------- auto layout
 
-/** display:flex (row/column, sem reverse) vira Auto Layout no Figma. */
+const px = (v: string) => parseFloat(v) || 0;
+
+/** display:flex (row/column ± reverse) ou display:grid → layout no Figma. */
 function detectAutoLayout(cs: CSSStyleDeclaration): AutoLayout | null {
-  if (cs.display !== "flex" && cs.display !== "inline-flex") return null;
+  const isFlex = cs.display === "flex" || cs.display === "inline-flex";
+  const isGrid = cs.display === "grid" || cs.display === "inline-grid";
+  if (!isFlex && !isGrid) return null;
+
+  const paddings = {
+    paddingTop: px(cs.paddingTop),
+    paddingRight: px(cs.paddingRight),
+    paddingBottom: px(cs.paddingBottom),
+    paddingLeft: px(cs.paddingLeft),
+  };
+  const gapPx = (v: string) => (v === "normal" ? 0 : px(v));
+
+  if (isGrid) return gridLayout(cs, paddings, gapPx);
+  return flexLayout(cs, paddings, gapPx);
+}
+
+type Paddings = Pick<
+  AutoLayout,
+  "paddingTop" | "paddingRight" | "paddingBottom" | "paddingLeft"
+>;
+
+/**
+ * Tamanhos (px) das tracks de um grid-template-* já resolvido pelo computed
+ * style. Remove nomes de linha `[...]` e converte cada track em número;
+ * descarta o que não resolve em px.
+ */
+function parseTracks(template: string): number[] {
+  if (!template || template === "none") return [];
+  return template
+    .replace(/\[[^\]]*\]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => parseFloat(t))
+    .filter((n) => !isNaN(n));
+}
+
+/** Offsets cumulativos (início de cada track), incluindo o gap entre elas. */
+function cumulativeStarts(sizes: number[], gap: number): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < sizes.length; i++) {
+    out.push(acc);
+    acc += sizes[i] + gap;
+  }
+  return out;
+}
+
+/** Índice da fronteira mais próxima de `value`. */
+function nearestIndex(boundaries: number[], value: number): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < boundaries.length; i++) {
+    const d = Math.abs(boundaries[i] - value);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Deriva a célula (start + span, 0-based) de cada filho de grid casando sua
+ * geometria real contra os offsets cumulativos das tracks. Pula filhos
+ * `absolute` (out-of-flow).
+ */
+function computeGridAreas(
+  layout: AutoLayout,
+  containerRect: Rect,
+  cs: CSSStyleDeclaration,
+  children: CapturedNode[]
+): void {
+  const { columnSizes, rowSizes, columnGap, rowGap } = layout;
+  if (columnSizes.length < 1) return;
+  const originX = containerRect.x + parseFloat(cs.borderLeftWidth) + layout.paddingLeft;
+  const originY = containerRect.y + parseFloat(cs.borderTopWidth) + layout.paddingTop;
+  const colLeft = cumulativeStarts(columnSizes, columnGap);
+  const colRight = colLeft.map((l, i) => l + columnSizes[i]);
+  const rowTop = cumulativeStarts(rowSizes, rowGap);
+  const rowBottom = rowTop.map((t, i) => t + rowSizes[i]);
+
+  for (const child of children) {
+    if (child.absolute) continue;
+    const relLeft = child.rect.x - originX;
+    const relRight = relLeft + child.rect.width;
+    const relTop = child.rect.y - originY;
+    const relBottom = relTop + child.rect.height;
+    const columnStart = nearestIndex(colLeft, relLeft);
+    const columnSpan = Math.max(1, nearestIndex(colRight, relRight) - columnStart + 1);
+    const rowStart = rowSizes.length ? nearestIndex(rowTop, relTop) : 0;
+    const rowSpan = rowSizes.length
+      ? Math.max(1, nearestIndex(rowBottom, relBottom) - rowStart + 1)
+      : 1;
+    child.gridArea = { columnStart, columnSpan, rowStart, rowSpan };
+  }
+}
+
+function gridLayout(
+  cs: CSSStyleDeclaration,
+  paddings: Paddings,
+  gapPx: (v: string) => number
+): AutoLayout | null {
+  const columnSizes = parseTracks(cs.gridTemplateColumns);
+  const rowSizes = parseTracks(cs.gridTemplateRows);
+  // Sem colunas resolvidas (grid-auto-flow puro) não dá pra reconstruir a grade.
+  if (columnSizes.length < 1) return null;
+  return {
+    mode: "grid",
+    direction: "horizontal",
+    reverse: false,
+    gap: 0,
+    columns: columnSizes.length,
+    rows: Math.max(rowSizes.length, 1),
+    columnSizes,
+    rowSizes,
+    rowGap: gapPx(cs.rowGap),
+    columnGap: gapPx(cs.columnGap),
+    ...paddings,
+    alignItems: "start",
+    justifyContent: "start",
+    wrap: false,
+  };
+}
+
+function flexLayout(
+  cs: CSSStyleDeclaration,
+  paddings: Paddings,
+  gapPx: (v: string) => number
+): AutoLayout | null {
   const dir = cs.flexDirection;
-  if (dir !== "row" && dir !== "column") return null; // reverse: fora da v1
-  const horizontal = dir === "row";
+  if (!["row", "column", "row-reverse", "column-reverse"].includes(dir)) return null;
+  const horizontal = dir === "row" || dir === "row-reverse";
+  const reverse = dir.endsWith("-reverse");
   const gapStr = horizontal ? cs.columnGap : cs.rowGap;
-  const px = (v: string) => parseFloat(v) || 0;
 
   const alignItems: AutoLayout["alignItems"] = cs.alignItems.includes("center")
     ? "center"
@@ -162,12 +296,17 @@ function detectAutoLayout(cs: CSSStyleDeclaration): AutoLayout | null {
         : "start";
 
   return {
+    mode: "flex",
     direction: horizontal ? "horizontal" : "vertical",
-    gap: gapStr === "normal" ? 0 : px(gapStr),
-    paddingTop: px(cs.paddingTop),
-    paddingRight: px(cs.paddingRight),
-    paddingBottom: px(cs.paddingBottom),
-    paddingLeft: px(cs.paddingLeft),
+    reverse,
+    gap: gapPx(gapStr),
+    columns: 0,
+    rows: 0,
+    columnSizes: [],
+    rowSizes: [],
+    rowGap: 0,
+    columnGap: 0,
+    ...paddings,
     alignItems,
     justifyContent,
     wrap: cs.flexWrap === "wrap" || cs.flexWrap === "wrap-reverse",
@@ -185,6 +324,23 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
 
   if (el instanceof SVGSVGElement) return svgNode(el, r);
   if (el instanceof HTMLImageElement) return await imageNode(el, cs, r);
+
+  // Fallback de fidelidade: rasteriza elementos que não reconstruímos bem
+  // (canvas/video/filter) como um screenshot recortado da página.
+  if (shouldScreenshot(el, cs, r)) {
+    const shot = await screenshotElement(el, r);
+    if (shot) {
+      return {
+        type: "image",
+        name: `${layerName(el)} (screenshot)`,
+        rect: pageRect(r),
+        src: shot,
+        objectFit: "fill",
+        borderRadius: parseRadius(cs),
+      };
+    }
+    // falhou — segue com a reconstrução normal
+  }
 
   let layout = detectAutoLayout(cs);
   const entries: { key: number; idx: number; node: CapturedNode }[] = [];
@@ -213,17 +369,125 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
   // Texto multi-linha direto no flex viraria itens com gap errado - desliga
   if (textLines > 1) layout = null;
 
+  // Grid: deriva a célula (start + span) de cada filho pela geometria real.
+  if (layout && layout.mode === "grid") {
+    computeGridAreas(layout, r, cs, entries.map((e) => e.node));
+  }
+
   const styles = await elementStyles(el, cs);
   styles.layout = layout;
+
+  // Pseudo-elementos ::before/::after entram como filhos sintéticos
+  // (::before antes do conteúdo, ::after depois — ordem de pintura do CSS).
+  const before = await pseudoNode(el, "::before", r);
+  const after = await pseudoNode(el, "::after", r);
+  const children = entries.map((e) => e.node);
+  if (before) children.unshift(before);
+  if (after) children.push(after);
+
+  // Com rotação, o getBoundingClientRect devolve a AABB da caixa girada;
+  // usamos a caixa não-transformada (offset*) e deixamos o Figma rotacionar.
+  const rect = styles.rotation !== 0 ? untransformedRect(el, r) : pageRect(r);
 
   return {
     type: "element",
     tag: el.tagName.toLowerCase(),
     name: layerName(el),
-    rect: pageRect(r),
+    rect,
     styles,
-    children: entries.map((e) => e.node),
+    children,
   };
+}
+
+/**
+ * Captura ::before/::after gerados. Sem DOM real não há geometria exata —
+ * usamos width/height do computed style e offsets de posicionamento absoluto,
+ * com fallback para o canto do content-box do pai. Aproximado por natureza.
+ */
+async function pseudoNode(
+  el: Element,
+  which: "::before" | "::after",
+  parentRect: DOMRect
+): Promise<CapturedNode | null> {
+  const pcs = getComputedStyle(el, which);
+  const content = pcs.content;
+  if (!content || content === "none" || content === "normal") return null;
+  if (pcs.display === "none" || pcs.visibility === "hidden" || Number(pcs.opacity) === 0)
+    return null;
+
+  const w = parseFloat(pcs.width) || 0;
+  const h = parseFloat(pcs.height) || 0;
+  const strMatch = content.match(/^"((?:[^"\\]|\\.)*)"$|^'((?:[^'\\]|\\.)*)'$/s);
+  const text = strMatch ? (strMatch[1] ?? strMatch[2] ?? "").replace(/\\(.)/g, "$1") : null;
+
+  // Posição aproximada relativa ao pai.
+  const parentCs = getComputedStyle(el);
+  const padLeft = parseFloat(parentCs.borderLeftWidth) + parseFloat(parentCs.paddingLeft);
+  const padTop = parseFloat(parentCs.borderTopWidth) + parseFloat(parentCs.paddingTop);
+  let x = parentRect.left + scrollX + padLeft;
+  let y = parentRect.top + scrollY + padTop;
+  if (pcs.position === "absolute" || pcs.position === "fixed") {
+    if (pcs.left !== "auto") x = parentRect.left + scrollX + parseFloat(pcs.left);
+    else if (pcs.right !== "auto") x = parentRect.right + scrollX - parseFloat(pcs.right) - w;
+    if (pcs.top !== "auto") y = parentRect.top + scrollY + parseFloat(pcs.top);
+    else if (pcs.bottom !== "auto") y = parentRect.bottom + scrollY - parseFloat(pcs.bottom) - h;
+  }
+
+  const name = `${el.tagName.toLowerCase()}${which}`;
+
+  if (text && text.trim()) {
+    const styles = textStylesFrom(pcs);
+    return {
+      type: "text",
+      name: `${name} "${text.slice(0, 20)}"`,
+      rect: { x, y, width: w || text.length * styles.fontSize * 0.6, height: h || styles.fontSize * 1.3 },
+      content: text,
+      styles,
+    };
+  }
+
+  // Caixa decorativa: só vale a pena se for visível e tiver tamanho.
+  if (w < 1 || h < 1) return null;
+  const styles = await pseudoStyles(pcs, w, h);
+  const visible =
+    styles.backgroundColor || styles.backgroundLayers.length > 0 || styles.borders;
+  if (!visible) return null;
+  return { type: "element", tag: which, name, rect: { x, y, width: w, height: h }, styles, children: [] };
+}
+
+/** ElementStyles a partir do computed style de um pseudo-elemento. */
+async function pseudoStyles(
+  pcs: CSSStyleDeclaration,
+  w: number,
+  h: number
+): Promise<ElementStyles> {
+  const bg = pcs.backgroundColor;
+  const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
+
+  const backgroundLayers = await parseBackgroundLayers(pcs.backgroundImage, (url) =>
+    toDataURL(url, w, h)
+  );
+
+  return {
+    backgroundColor: transparent ? null : bg,
+    backgroundLayers,
+    borders: parseBorders(pcs),
+    borderRadius: parseRadius(pcs),
+    boxShadow: parseShadows(pcs.boxShadow),
+    opacity: Number(pcs.opacity),
+    overflowHidden: pcs.overflow === "hidden" || pcs.overflow === "clip",
+    layout: null,
+    rotation: parseRotation(pcs.transform),
+  };
+}
+
+/** Caixa de layout (sem transform), centrada no mesmo ponto que a AABB girada. */
+function untransformedRect(el: Element, r: DOMRect): Rect {
+  const cx = r.left + r.width / 2 + scrollX;
+  const cy = r.top + r.height / 2 + scrollY;
+  const w = (el as HTMLElement).offsetWidth || r.width;
+  const h = (el as HTMLElement).offsetHeight || r.height;
+  return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
 }
 
 function layerName(el: Element): string {
@@ -440,6 +704,73 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
+// ----------------------------------------------------------- screenshot fallback
+
+/** Elementos cuja reconstrução por nós é fraca → melhor rasterizar. */
+function shouldScreenshot(el: Element, cs: CSSStyleDeclaration, r: DOMRect): boolean {
+  const tag = el.tagName;
+  const candidate = tag === "CANVAS" || tag === "VIDEO" || (cs.filter !== "none" && !!cs.filter);
+  if (!candidate) return false;
+  // Precisa caber no viewport (captureVisibleTab só pega a área visível).
+  return r.width >= 1 && r.height >= 1 && r.width <= innerWidth && r.height <= innerHeight;
+}
+
+/**
+ * Rola o elemento para dentro do viewport, captura a aba visível via service
+ * worker e recorta a região do elemento (×DPR). Restaura o scroll ao final.
+ */
+async function screenshotElement(el: Element, r: DOMRect): Promise<string | null> {
+  const prevX = scrollX;
+  const prevY = scrollY;
+  try {
+    if (r.top < 0 || r.left < 0 || r.bottom > innerHeight || r.right > innerWidth) {
+      el.scrollIntoView({ block: "center", inline: "center" });
+      await nextFrame();
+    }
+    const rr = el.getBoundingClientRect();
+    if (rr.top < 0 || rr.left < 0 || rr.bottom > innerHeight || rr.right > innerWidth) {
+      return null; // não coube totalmente no viewport
+    }
+    const full = await captureViewport();
+    if (!full) return null;
+    return await cropDataUrl(full, rr, devicePixelRatio || 1);
+  } catch {
+    return null;
+  } finally {
+    scrollTo(prevX, prevY);
+  }
+}
+
+async function captureViewport(): Promise<string | null> {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "h2f-screenshot" });
+    return res?.ok && typeof res.dataUrl === "string" ? res.dataUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Recorta a região (em px CSS de viewport) de um screenshot em escala DPR. */
+async function cropDataUrl(dataUrl: string, rr: DOMRect, dpr: number): Promise<string | null> {
+  const img = await loadImage(dataUrl);
+  if (!img) return null;
+  const sx = Math.round(rr.left * dpr);
+  const sy = Math.round(rr.top * dpr);
+  const sw = Math.max(1, Math.round(rr.width * dpr));
+  const sh = Math.max(1, Math.round(rr.height * dpr));
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------- svg
 
 function svgNode(el: SVGSVGElement, r: DOMRect): SvgNode {
@@ -456,14 +787,14 @@ function svgNode(el: SVGSVGElement, r: DOMRect): SvgNode {
 function defaultStyles(): ElementStyles {
   return {
     backgroundColor: null,
-    backgroundImage: null,
-    gradient: null,
-    border: null,
+    backgroundLayers: [],
+    borders: null,
     borderRadius: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 },
     boxShadow: [],
     opacity: 1,
     overflowHidden: false,
     layout: null,
+    rotation: 0,
   };
 }
 
@@ -474,42 +805,67 @@ async function elementStyles(
   const bg = cs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  let backgroundImage: string | null = null;
-  let gradient: Gradient | null = null;
-  const bgi = cs.backgroundImage;
-  if (bgi && bgi !== "none") {
-    const urlMatch = bgi.match(/url\(["']?([^"')]+)["']?\)/);
-    if (urlMatch) {
-      const r = el.getBoundingClientRect();
-      backgroundImage = await toDataURL(urlMatch[1], r.width, r.height);
-    } else {
-      gradient = parseGradient(bgi);
-    }
-  }
-
-  const bw = parseFloat(cs.borderTopWidth);
-  const border =
-    bw > 0 && cs.borderTopStyle !== "none"
-      ? {
-          width: bw,
-          color: cs.borderTopColor,
-          style: (["dashed", "dotted"].includes(cs.borderTopStyle)
-            ? cs.borderTopStyle
-            : "solid") as "solid" | "dashed" | "dotted",
-        }
-      : null;
+  const backgroundLayers = await parseBackgroundLayers(cs.backgroundImage, (url) => {
+    const r = el.getBoundingClientRect();
+    return toDataURL(url, r.width, r.height);
+  });
 
   return {
     backgroundColor: transparent ? null : bg,
-    backgroundImage,
-    gradient,
-    border,
+    backgroundLayers,
+    borders: parseBorders(cs),
     borderRadius: parseRadius(cs),
     boxShadow: parseShadows(cs.boxShadow),
     opacity: Number(cs.opacity),
     overflowHidden: cs.overflow === "hidden" || cs.overflow === "clip",
     layout: null, // preenchido pelo walkElement
+    rotation: parseRotation(cs.transform),
   };
+}
+
+/**
+ * Extrai o ângulo de rotação de uma matriz CSS `transform` (graus, sentido
+ * horário). Ignora escala/translação (a translação já está no rect via
+ * getBoundingClientRect) e skew. Retorna 0 quando não há rotação relevante.
+ */
+function parseRotation(transform: string): number {
+  if (!transform || transform === "none") return 0;
+  const m = transform.match(/matrix\(([^)]+)\)/);
+  if (!m) return 0; // matrix3d e afins: fora do escopo
+  const [a, b] = m[1].split(",").map((v) => parseFloat(v.trim()));
+  if (isNaN(a) || isNaN(b)) return 0;
+  // CSS: y cresce para baixo; ângulo horário positivo.
+  const deg = (Math.atan2(b, a) * 180) / Math.PI;
+  return Math.abs(deg) < 0.5 ? 0 : deg;
+}
+
+/** Lê os 4 lados da borda; retorna null se nenhum lado é visível. */
+function parseBorders(cs: CSSStyleDeclaration): Borders | null {
+  const side = (
+    width: string,
+    color: string,
+    style: string
+  ): SideBorder | null => {
+    const w = parseFloat(width);
+    if (!(w > 0) || style === "none") return null;
+    return {
+      width: w,
+      color,
+      style: (["dashed", "dotted"].includes(style) ? style : "solid") as
+        | "solid"
+        | "dashed"
+        | "dotted",
+    };
+  };
+  const borders: Borders = {
+    top: side(cs.borderTopWidth, cs.borderTopColor, cs.borderTopStyle),
+    right: side(cs.borderRightWidth, cs.borderRightColor, cs.borderRightStyle),
+    bottom: side(cs.borderBottomWidth, cs.borderBottomColor, cs.borderBottomStyle),
+    left: side(cs.borderLeftWidth, cs.borderLeftColor, cs.borderLeftStyle),
+  };
+  return borders.top || borders.right || borders.bottom || borders.left
+    ? borders
+    : null;
 }
 
 function parseRadius(cs: CSSStyleDeclaration): BorderRadius {
@@ -556,22 +912,101 @@ function parseShadows(v: string): Shadow[] {
   });
 }
 
-/** Parser básico de linear-gradient (cobre os casos comuns do computed style). */
-function parseGradient(v: string): Gradient | null {
-  const m = v.match(/linear-gradient\((.+)\)$/);
-  if (!m) return null;
-  const parts = splitTopLevel(m[1]);
-  let angle = 180;
-  if (parts[0]?.endsWith("deg")) angle = parseFloat(parts.shift()!);
-  else if (parts[0]?.startsWith("to ")) {
-    const dir = parts.shift()!;
-    angle = { "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 }[dir] ?? 180;
+/**
+ * Separa `background-image` em camadas (ordem do CSS: índice 0 = topo) e
+ * resolve cada uma: `url(...)` → imagem (via resolveImage), gradiente → Gradient.
+ * Camadas que não resolvem (imagem falha, gradiente null) são descartadas.
+ */
+async function parseBackgroundLayers(
+  bgi: string,
+  resolveImage: (url: string) => Promise<string | null>
+): Promise<BackgroundLayer[]> {
+  if (!bgi || bgi === "none") return [];
+  const layers: BackgroundLayer[] = [];
+  for (const part of splitTopLevel(bgi)) {
+    const urlMatch = part.match(/url\(["']?([^"')]+)["']?\)/);
+    if (urlMatch) {
+      const src = await resolveImage(urlMatch[1]);
+      if (src) layers.push({ kind: "image", src });
+    } else {
+      const gradient = parseGradient(part);
+      if (gradient) layers.push({ kind: "gradient", gradient });
+    }
   }
-  const stops = parts.flatMap((p, i) => {
+  return layers;
+}
+
+const DEFAULT_CENTER = { x: 0.5, y: 0.5 };
+
+/** Parser de linear/radial/conic-gradient (casos comuns do computed style). */
+function parseGradient(v: string): Gradient | null {
+  const linear = v.match(/^(?:repeating-)?linear-gradient\((.+)\)$/);
+  const radial = v.match(/^(?:repeating-)?radial-gradient\((.+)\)$/);
+  const conic = v.match(/^(?:repeating-)?conic-gradient\((.+)\)$/);
+
+  if (linear) {
+    const parts = splitTopLevel(linear[1]);
+    let angle = 180;
+    if (parts[0]?.endsWith("deg")) angle = parseFloat(parts.shift()!);
+    else if (parts[0]?.startsWith("to ")) {
+      const dir = parts.shift()!;
+      angle = { "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 }[dir] ?? 180;
+    }
+    const stops = parseStops(parts);
+    return stops.length >= 2 ? { type: "linear", angle, center: DEFAULT_CENTER, stops } : null;
+  }
+
+  if (radial) {
+    const parts = splitTopLevel(radial[1]);
+    let center = DEFAULT_CENTER;
+    // Prefixo opcional de forma/tamanho/posição (sem rgb → não é um color stop).
+    if (parts[0] && !/rgba?\(|#[0-9a-fA-F]/.test(parts[0])) {
+      center = parseCenter(parts.shift()!);
+    }
+    const stops = parseStops(parts);
+    return stops.length >= 2 ? { type: "radial", angle: 0, center, stops } : null;
+  }
+
+  if (conic) {
+    const parts = splitTopLevel(conic[1]);
+    let angle = 0;
+    let center = DEFAULT_CENTER;
+    if (parts[0] && /from |\bat /.test(parts[0])) {
+      const head = parts.shift()!;
+      const fromMatch = head.match(/from\s+([\d.]+)deg/);
+      if (fromMatch) angle = parseFloat(fromMatch[1]);
+      center = parseCenter(head);
+    }
+    const stops = parseStops(parts);
+    return stops.length >= 2 ? { type: "conic", angle, center, stops } : null;
+  }
+
+  return null;
+}
+
+/** Extrai os color stops de uma lista de partes top-level já separadas. */
+function parseStops(parts: string[]): { color: string; position: number }[] {
+  return parts.flatMap((p, i) => {
     const color = p.match(/rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}/)?.[0];
     if (!color) return [];
     const pos = p.match(/([\d.]+)%/);
     return [{ color, position: pos ? Number(pos[1]) / 100 : i / Math.max(parts.length - 1, 1) }];
   });
-  return stops.length >= 2 ? { type: "linear", angle, stops } : null;
+}
+
+/** Resolve "at X% Y%" / keywords (center/left/top/right/bottom) → centro 0..1. */
+function parseCenter(head: string): { x: number; y: number } {
+  const at = head.match(/\bat\s+(.+)$/);
+  if (!at) return DEFAULT_CENTER;
+  const tokens = at[1].trim().split(/\s+/);
+  const axis = (tok: string | undefined, vertical: boolean): number => {
+    if (!tok) return 0.5;
+    const pct = tok.match(/([\d.]+)%/);
+    if (pct) return Number(pct[1]) / 100;
+    const map: Record<string, number> = vertical
+      ? { top: 0, center: 0.5, bottom: 1 }
+      : { left: 0, center: 0.5, right: 1 };
+    return map[tok] ?? 0.5;
+  };
+  return { x: axis(tokens[0], false), y: axis(tokens[1] ?? tokens[0], true) };
 }

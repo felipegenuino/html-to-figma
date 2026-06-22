@@ -9,6 +9,7 @@ packages/
   shared/        Tipos do JSON intermediário (CaptureDocument, CapturedNode…)
   extension/     Extensão MV3 — popup, content script de captura, picker de elemento
   figma-plugin/  Plugin do Figma — cola o JSON e reconstrói frames/textos/imagens/SVGs
+  relay/         Servidor WebSocket local (sem deps) — transfere capturas grandes
 ```
 
 ## Pipeline
@@ -34,6 +35,62 @@ npm run build
 1. Na página alvo, clique na extensão → "Capturar página inteira" ou "Selecionar elemento…" (Esc cancela).
 2. No Figma, rode o plugin, cole o JSON (Ctrl+V) e clique em "Importar".
 
+### Transferência via servidor (opcional, para payloads grandes)
+
+Capturas com muitas imagens estouram o clipboard. Rode o relay local:
+
+```bash
+npm run relay   # ws://localhost:7341 (porta via H2F_RELAY_PORT)
+```
+
+Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
+Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
+Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
+
+## Já resolvido (v0.8)
+
+- **Grid com posicionamento explícito**: a célula de cada item (`grid-column`/
+  `grid-row` e spans) é derivada da geometria real e aplicada no Figma via
+  posicionamento MANUAL (`setGridChildPosition` + `gridColumnSpan`/`gridRowSpan`).
+  Grids de auto-flow comum continuam no auto-flow (sem regressão).
+
+## Já resolvido (v0.7)
+
+- **Grid com tracks não-uniformes**: `grid-template-columns/rows` é capturado com
+  o tamanho px de cada track (já resolvido pelo computed style, inclusive `fr`) e
+  aplicado como tracks `FIXED` no Figma — `1fr 2fr 1fr`, `200px 1fr` etc. deixam
+  de virar colunas iguais.
+
+## Já resolvido (v0.6)
+
+- **Múltiplas camadas de background**: `background-image` com várias camadas
+  (ex.: gradiente sobre imagem, gradientes empilhados) é capturado como lista
+  ordenada e empilhado como `fills` no Figma, na ordem correta de pintura.
+
+## Já resolvido (v0.5)
+
+- **Bordas por lado**: cada lado (`top`/`right`/`bottom`/`left`) é capturado com
+  largura/cor/estilo próprios. No Figma, lados com a mesma cor usam larguras
+  nativas por lado (`strokeTopWeight`…); cores divergentes (acento `border-left`,
+  etc.) viram retângulos finos por lado para preservar a cor exata.
+- **Gradientes radial/conic**: `radial-gradient` → `GRADIENT_RADIAL` e
+  `conic-gradient` → `GRADIENT_ANGULAR` (com centro e from-angle), além do
+  `linear-gradient` já existente.
+
+## Já resolvido (v0.4)
+
+- **Grid**: `display: grid` vira Grid layout nativo do Figma (`layoutMode = GRID`)
+  com contagem de colunas/linhas e gaps; `flex-direction: *-reverse` é mapeado
+  invertendo a ordem dos filhos.
+- **Pseudo-elementos**: `::before`/`::after` com `content` viram TextNodes (texto)
+  ou frames decorativos (background/border), posicionados de forma aproximada.
+- **transform**: rotação (`rotate`/`matrix`) é extraída e aplicada via
+  `node.rotation`, usando a caixa não-transformada para preservar o centro.
+- **Screenshot por elemento**: `<canvas>`, `<video>` e elementos com `filter`
+  são rasterizados via `captureVisibleTab` (recorte ×DPR) como fallback.
+- **Relay WebSocket**: servidor local sem dependências transfere capturas grandes
+  fora do clipboard, com buffer da última captura para o plugin que conecta depois.
+
 ## Já resolvido (v0.3)
 
 - **Auto Layout**: `display: flex` (row/column) vira Auto Layout no Figma —
@@ -52,14 +109,20 @@ npm run build
 
 ## Limitações conhecidas
 
-- Posicionamento absoluto (sem Auto Layout).
-- Gradientes: só `linear-gradient` simples; borda uniforme (usa `border-top`).
-- Pseudo-elementos (`::before`/`::after`), `transform`, `filter` e iframes são ignorados.
-- Fontes precisam existir no Figma; senão cai para Inter.
+- Gradientes radial/conic: forma/tamanho não-circular e posições por keyword são
+  aproximados. `background-size`/`background-position` por camada não são aplicados
+  (imagens usam `scaleMode FILL`); só a ordem de empilhamento é fiel.
+- Bordas multicolor: cantos arredondados ficam aproximados (overlays retangulares
+  não seguem o raio); `dashed`/`dotted` viram sólido nos overlays.
+- Pseudo-elementos: geometria aproximada (sem caixa real no DOM); `content`
+  com `url()`/`counter()` não é resolvido.
+- `transform`: só rotação (escala/skew/`matrix3d` ignorados); conteúdo aninhado
+  de elementos rotacionados pode ficar levemente desalinhado.
+- Screenshot por elemento só funciona se o elemento couber no viewport visível.
+- `iframes` continuam ignorados; fontes precisam existir no Figma (senão, Inter).
 
 ## Próximos passos
 
-- Auto Layout para `display: grid` e flex `*-reverse`.
-- Captura de pseudo-elementos e `transform`.
-- Screenshot por elemento como fallback de fidelidade.
-- Transferência via WebSocket/servidor local em vez de clipboard (payloads grandes).
+- Escala/skew em `transform` e suporte a `matrix3d`.
+- Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
+- `background-size`/`background-position` por camada (hoje tudo usa `FILL`).

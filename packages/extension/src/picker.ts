@@ -1,4 +1,5 @@
 import { capture } from "./capture";
+import { deliverViaRelay } from "./transport";
 
 /**
  * Modo de seleção de elemento: highlight no hover, clique captura,
@@ -39,9 +40,13 @@ export function startPicker() {
     cleanup();
     if (!current) return;
     try {
-      const doc = await capture(current);
-      await copyText(JSON.stringify(doc));
-      toast("✓ Copiado! Cole no plugin do Figma.");
+      const json = JSON.stringify(await capture(current));
+      if (await deliverViaRelay(json)) {
+        toast("✓ Enviado ao Figma via servidor.");
+      } else {
+        await copyText(json);
+        toast("✓ Copiado! Cole no plugin do Figma.");
+      }
     } catch (err) {
       toast("Erro na captura: " + (err instanceof Error ? err.message : err), true);
     }

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1000px; font-family: Arial; }
+
+  /* 1. Flex row com um filho position:relative no meio (testa reorder por paint order) */
+  .flex-row { display: flex; flex-direction: row; gap: 20px; padding: 16px; background: #eee; }
+  .flex-row > .item { width: 100px; height: 60px; background: #cdf; }
+  .flex-row > .rel { position: relative; z-index: 1; background: #fcd; }
+
+  /* 2. CSS grid 3 colunas */
+  .grid { display: grid; grid-template-columns: 200px 200px 200px; gap: 12px; padding: 10px; background: #dfd; }
+  .grid > .card { height: 80px; background: #9c9; }
+
+  /* 3. Container normal (block) com filho absoluto sobreposto */
+  .stack { position: relative; height: 120px; background: #ffe; }
+  .stack > .abs { position: absolute; top: 10px; left: 30px; width: 80px; height: 80px; background: #f99; }
+
+  /* 4. Background-image (data URI) */
+  .bg {
+    width: 120px; height: 120px;
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzM2NiIvPjwvc3ZnPg==");
+    background-size: cover;
+  }
+
+  /* 5. Pseudo-elemento ::before com texto */
+  .pseudo { position: relative; width: 200px; height: 40px; background: #eef; }
+  .pseudo::before { content: "★ before"; color: #c00; font-size: 14px; }
+
+  /* 6. Rotação */
+  .rot { width: 100px; height: 40px; background: #ccf; transform: rotate(30deg); margin: 40px; }
+
+  /* 7. Borda só num lado (border-bottom) */
+  .single-border { width: 200px; height: 40px; background: #fff; border-bottom: 3px solid rgb(51, 51, 51); }
+
+  /* 8. Borda multicolor (acento border-left azul + resto cinza) */
+  .multi-border {
+    width: 200px; height: 40px; background: #fff;
+    border: 1px solid rgb(204, 204, 204);
+    border-left: 4px solid rgb(0, 102, 255);
+  }
+
+  /* 9. radial-gradient */
+  .radial { width: 120px; height: 120px; background: radial-gradient(circle at 50% 50%, rgb(255, 0, 0), rgb(0, 0, 255)); }
+
+  /* 10. conic-gradient */
+  .conic { width: 120px; height: 120px; background: conic-gradient(from 90deg at 50% 50%, rgb(255, 0, 0), rgb(0, 255, 0), rgb(0, 0, 255)); }
+
+  /* 12. Grid com colunas não-uniformes (1fr 2fr 1fr) */
+  .grid-nu { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 10px; padding: 10px; background: #def; }
+  .grid-nu > .cell { height: 50px; background: #8ad; }
+
+  /* 13. Grid com posicionamento explícito + spans */
+  .grid-exp { display: grid; grid-template-columns: repeat(3, 100px); grid-template-rows: repeat(2, 50px); gap: 8px; padding: 8px; background: #fed; }
+  .grid-exp > .wide { grid-column: 1 / 3; background: #fa8; }
+  .grid-exp > .tall { grid-column: 3; grid-row: 1 / 3; background: #8af; }
+  .grid-exp > .cx { background: #af8; }
+  .grid-exp > .cy { background: #f8a; }
+
+  /* 11. Múltiplas camadas: gradiente linear (topo) sobre radial (fundo) */
+  .stacked-bg {
+    width: 120px; height: 120px;
+    background-image:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0)),
+      radial-gradient(circle at 50% 50%, rgb(255, 200, 0), rgb(200, 0, 0));
+  }
+
+  section { margin: 20px; }
+</style>
+</head>
+<body>
+  <section class="flex-row">
+    <div class="item">A</div>
+    <div class="item">B</div>
+    <div class="rel">C (relative)</div>
+    <div class="item">D</div>
+  </section>
+
+  <section class="grid">
+    <div class="card">1</div><div class="card">2</div><div class="card">3</div>
+    <div class="card">4</div><div class="card">5</div><div class="card">6</div>
+  </section>
+
+  <section class="stack">
+    <div class="abs">abs</div>
+  </section>
+
+  <section class="bg"></section>
+  <section class="pseudo">conteúdo</section>
+  <section class="rot">girado</section>
+
+  <section class="single-border"></section>
+  <section class="multi-border"></section>
+  <section class="radial"></section>
+  <section class="conic"></section>
+  <section class="stacked-bg"></section>
+  <section class="grid-nu"><div class="cell">a</div><div class="cell">b</div><div class="cell">c</div></section>
+  <section class="grid-exp"><div class="wide">wide</div><div class="tall">tall</div><div class="cx">x</div><div class="cy">y</div></section>
+</body>
+</html>
