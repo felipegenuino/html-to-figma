@@ -178,6 +178,67 @@ function parseTracks(template: string): number[] {
     .filter((n) => !isNaN(n));
 }
 
+/** Offsets cumulativos (início de cada track), incluindo o gap entre elas. */
+function cumulativeStarts(sizes: number[], gap: number): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < sizes.length; i++) {
+    out.push(acc);
+    acc += sizes[i] + gap;
+  }
+  return out;
+}
+
+/** Índice da fronteira mais próxima de `value`. */
+function nearestIndex(boundaries: number[], value: number): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < boundaries.length; i++) {
+    const d = Math.abs(boundaries[i] - value);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Deriva a célula (start + span, 0-based) de cada filho de grid casando sua
+ * geometria real contra os offsets cumulativos das tracks. Pula filhos
+ * `absolute` (out-of-flow).
+ */
+function computeGridAreas(
+  layout: AutoLayout,
+  containerRect: Rect,
+  cs: CSSStyleDeclaration,
+  children: CapturedNode[]
+): void {
+  const { columnSizes, rowSizes, columnGap, rowGap } = layout;
+  if (columnSizes.length < 1) return;
+  const originX = containerRect.x + parseFloat(cs.borderLeftWidth) + layout.paddingLeft;
+  const originY = containerRect.y + parseFloat(cs.borderTopWidth) + layout.paddingTop;
+  const colLeft = cumulativeStarts(columnSizes, columnGap);
+  const colRight = colLeft.map((l, i) => l + columnSizes[i]);
+  const rowTop = cumulativeStarts(rowSizes, rowGap);
+  const rowBottom = rowTop.map((t, i) => t + rowSizes[i]);
+
+  for (const child of children) {
+    if (child.absolute) continue;
+    const relLeft = child.rect.x - originX;
+    const relRight = relLeft + child.rect.width;
+    const relTop = child.rect.y - originY;
+    const relBottom = relTop + child.rect.height;
+    const columnStart = nearestIndex(colLeft, relLeft);
+    const columnSpan = Math.max(1, nearestIndex(colRight, relRight) - columnStart + 1);
+    const rowStart = rowSizes.length ? nearestIndex(rowTop, relTop) : 0;
+    const rowSpan = rowSizes.length
+      ? Math.max(1, nearestIndex(rowBottom, relBottom) - rowStart + 1)
+      : 1;
+    child.gridArea = { columnStart, columnSpan, rowStart, rowSpan };
+  }
+}
+
 function gridLayout(
   cs: CSSStyleDeclaration,
   paddings: Paddings,
@@ -307,6 +368,11 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
 
   // Texto multi-linha direto no flex viraria itens com gap errado - desliga
   if (textLines > 1) layout = null;
+
+  // Grid: deriva a célula (start + span) de cada filho pela geometria real.
+  if (layout && layout.mode === "grid") {
+    computeGridAreas(layout, r, cs, entries.map((e) => e.node));
+  }
 
   const styles = await elementStyles(el, cs);
   styles.layout = layout;

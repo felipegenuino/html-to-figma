@@ -47,6 +47,13 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.8)
+
+- **Grid com posicionamento explícito**: a célula de cada item (`grid-column`/
+  `grid-row` e spans) é derivada da geometria real e aplicada no Figma via
+  posicionamento MANUAL (`setGridChildPosition` + `gridColumnSpan`/`gridRowSpan`).
+  Grids de auto-flow comum continuam no auto-flow (sem regressão).
+
 ## Já resolvido (v0.7)
 
 - **Grid com tracks não-uniformes**: `grid-template-columns/rows` é capturado com
@@ -116,9 +123,6 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
 ## Próximos passos
 
-- Grid com posicionamento explícito (`grid-row`/`grid-column`) e spans — itens
-  hoje seguem o auto-flow do Figma; placement explícito exige emular o
-  auto-placement do CSS para grids mistos.
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
 - `background-size`/`background-position` por camada (hoje tudo usa `FILL`).

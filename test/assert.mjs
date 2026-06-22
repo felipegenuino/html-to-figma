@@ -128,6 +128,32 @@ if (gridNu) {
   }
 }
 
+// --- grid com posicionamento explícito + spans ---
+const wide = findByName(root, "div.wide");
+check("grid-exp: .wide encontrado", !!wide);
+if (wide) {
+  const a = wide.gridArea;
+  check("grid-exp: .wide tem gridArea", !!a);
+  check("grid-exp: .wide columnStart 0", a?.columnStart === 0);
+  check("grid-exp: .wide columnSpan 2", a?.columnSpan === 2);
+  check("grid-exp: .wide rowStart 0", a?.rowStart === 0);
+  check("grid-exp: .wide rowSpan 1", a?.rowSpan === 1);
+}
+const tall = findByName(root, "div.tall");
+check("grid-exp: .tall encontrado", !!tall);
+if (tall) {
+  const a = tall.gridArea;
+  check("grid-exp: .tall tem gridArea", !!a);
+  check("grid-exp: .tall columnStart 2", a?.columnStart === 2);
+  check("grid-exp: .tall rowStart 0", a?.rowStart === 0);
+  check("grid-exp: .tall rowSpan 2", a?.rowSpan === 2);
+}
+const cy = findByName(root, "div.cy");
+if (cy) {
+  const a = cy.gridArea;
+  check("grid-exp: .cy auto → (row1,col1)", a?.rowStart === 1 && a?.columnStart === 1 && a?.columnSpan === 1);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

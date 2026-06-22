@@ -132,6 +132,7 @@ async function buildElement(
       ? [...n.children].reverse()
       : n.children;
 
+  const gridChildren: { node: SceneNode; area: NonNullable<CapturedNode["gridArea"]> }[] = [];
   for (const child of children) {
     const c = await buildNode(child, { x: n.rect.x, y: n.rect.y });
     if (c) {
@@ -140,8 +141,16 @@ async function buildElement(
       if (s.layout && child.absolute && "layoutPositioning" in c) {
         c.layoutPositioning = "ABSOLUTE";
         place(c, child.rect, { x: n.rect.x, y: n.rect.y });
+      } else if (child.gridArea) {
+        gridChildren.push({ node: c, area: child.gridArea });
       }
     }
+  }
+
+  // Grid: aplica posicionamento explícito quando o grid de fato usa placement
+  // não-trivial (spans ou ordem não-sequencial); senão mantém o auto-flow.
+  if (s.layout && s.layout.mode === "grid") {
+    applyGridPlacement(f, s.layout.columns, gridChildren);
   }
 
   // Bordas multicolor: retângulos por lado, no topo da ordem de pintura.
@@ -191,6 +200,50 @@ function applyTrackSizes(tracks: GridTrackSize[], sizes: number[]) {
       tracks[i].type = "FIXED";
       tracks[i].value = sizes[i];
     }
+  }
+}
+
+type GridChild = { node: SceneNode; area: NonNullable<CapturedNode["gridArea"]> };
+
+interface GridPositionable {
+  gridColumnSpan: number;
+  gridRowSpan: number;
+  setGridChildPosition(rowIndex: number, columnIndex: number): void;
+}
+
+/**
+ * Posiciona filhos no grid. Se todos forem 1×1 na ordem row-major natural, é um
+ * auto-flow comum e nada muda (preserva o comportamento atual). Caso contrário,
+ * ativa MANUAL e fixa a célula (start + span) de cada filho.
+ */
+function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]): void {
+  if (children.length === 0) return;
+  const cols = Math.max(columns, 1);
+  const trivial = children.every(
+    (c, k) =>
+      c.area.columnSpan === 1 &&
+      c.area.rowSpan === 1 &&
+      c.area.columnStart === k % cols &&
+      c.area.rowStart === Math.floor(k / cols)
+  );
+  if (trivial) return;
+
+  let maxCol = 0;
+  let maxRow = 0;
+  for (const { area } of children) {
+    maxCol = Math.max(maxCol, area.columnStart + area.columnSpan);
+    maxRow = Math.max(maxRow, area.rowStart + area.rowSpan);
+  }
+  f.gridColumnCount = Math.max(f.gridColumnCount, maxCol);
+  f.gridRowCount = Math.max(f.gridRowCount, maxRow);
+  f.gridItemsPositioning = "MANUAL";
+
+  for (const { node, area } of children) {
+    if (!("setGridChildPosition" in node)) continue;
+    const gc = node as unknown as GridPositionable;
+    gc.gridColumnSpan = area.columnSpan;
+    gc.gridRowSpan = area.rowSpan;
+    gc.setGridChildPosition(area.rowStart, area.columnStart);
   }
 }
 

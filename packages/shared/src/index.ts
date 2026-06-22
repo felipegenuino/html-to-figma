@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 6 as const;
+export const SCHEMA_VERSION = 7 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -53,6 +53,17 @@ interface BaseNode {
    * — no Figma recebe layoutPositioning ABSOLUTE e mantém x/y.
    */
   absolute?: boolean;
+  /**
+   * Célula no grid do pai (índices 0-based), derivada da geometria renderizada.
+   * Preenchido só para filhos diretos de um container grid que não sejam
+   * `absolute`. Usado pelo plugin para placement explícito (spans inclusos).
+   */
+  gridArea?: {
+    columnStart: number;
+    columnSpan: number;
+    rowStart: number;
+    rowSpan: number;
+  };
 }
 
 /** Container genérico (div, section, button...) → Frame no Figma. */

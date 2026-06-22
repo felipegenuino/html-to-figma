@@ -53,6 +53,13 @@
   .grid-nu { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 10px; padding: 10px; background: #def; }
   .grid-nu > .cell { height: 50px; background: #8ad; }
 
+  /* 13. Grid com posicionamento explícito + spans */
+  .grid-exp { display: grid; grid-template-columns: repeat(3, 100px); grid-template-rows: repeat(2, 50px); gap: 8px; padding: 8px; background: #fed; }
+  .grid-exp > .wide { grid-column: 1 / 3; background: #fa8; }
+  .grid-exp > .tall { grid-column: 3; grid-row: 1 / 3; background: #8af; }
+  .grid-exp > .cx { background: #af8; }
+  .grid-exp > .cy { background: #f8a; }
+
   /* 11. Múltiplas camadas: gradiente linear (topo) sobre radial (fundo) */
   .stacked-bg {
     width: 120px; height: 120px;
@@ -91,5 +98,6 @@
   <section class="conic"></section>
   <section class="stacked-bg"></section>
   <section class="grid-nu"><div class="cell">a</div><div class="cell">b</div><div class="cell">c</div></section>
+  <section class="grid-exp"><div class="wide">wide</div><div class="tall">tall</div><div class="cx">x</div><div class="cy">y</div></section>
 </body>
 </html>
