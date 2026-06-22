@@ -120,11 +120,13 @@ async function buildElement(
       blendMode: "NORMAL",
     }];
   });
+  // O radius de blur do Figma é ~2× o valor px do CSS (radius ≈ 2× stdDeviation
+  // gaussiano); sem o fator o blur sai pela metade.
   const blurEffects: Effect[] = [];
   if (s.layerBlur > 0)
-    blurEffects.push({ type: "LAYER_BLUR", radius: s.layerBlur, visible: true, blurType: "NORMAL" });
+    blurEffects.push({ type: "LAYER_BLUR", radius: s.layerBlur * 2, visible: true, blurType: "NORMAL" });
   if (s.backgroundBlur > 0)
-    blurEffects.push({ type: "BACKGROUND_BLUR", radius: s.backgroundBlur, visible: true, blurType: "NORMAL" });
+    blurEffects.push({ type: "BACKGROUND_BLUR", radius: s.backgroundBlur * 2, visible: true, blurType: "NORMAL" });
   f.effects = [...shadowEffects, ...blurEffects];
 
   f.opacity = s.opacity;
