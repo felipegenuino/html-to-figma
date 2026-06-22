@@ -433,10 +433,20 @@ function gradientPaint(g: Gradient): GradientPaint | null {
   const cy = g.center.y;
 
   if (g.type === "radial") {
-    // Círculo/elipse centrado em (cx,cy) cobrindo a caixa (raio ~0.5 por eixo).
+    // A gradientTransform do Figma mapeia geometria [0,1]² → espaço canônico
+    // (centro 0.5/0.5, raio 0.5). Logo o centro geométrico é M⁻¹·(0.5,0.5).
+    // Escolhemos a escala s para a cor final atingir o canto mais distante
+    // (default "farthest-corner" do CSS): s = 0.5 / dist(centro, canto distante).
+    const d = Math.max(
+      Math.hypot(cx, cy),
+      Math.hypot(1 - cx, cy),
+      Math.hypot(cx, 1 - cy),
+      Math.hypot(1 - cx, 1 - cy)
+    );
+    const s = d > 0 ? 0.5 / d : 0.5;
     const gradientTransform: Transform = [
-      [0.5, 0, cx - 0.5],
-      [0, 0.5, cy - 0.5],
+      [s, 0, 0.5 - s * cx],
+      [0, s, 0.5 - s * cy],
     ];
     return { type: "GRADIENT_RADIAL", gradientTransform, gradientStops: stops };
   }
