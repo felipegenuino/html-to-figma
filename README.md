@@ -47,6 +47,11 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.10)
+
+- **background-size**: `cover` → `FILL` e `contain` → `FIT` por camada de imagem
+  (antes tudo era `FILL`, esticando `contain`).
+
 ## Já resolvido (v0.9)
 
 - **Blur**: `filter: blur()` vira `LAYER_BLUR` e `backdrop-filter: blur()` vira
@@ -133,4 +138,5 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
-- `background-size`/`background-position` por camada (hoje tudo usa `FILL`).
+- `background-position`/`background-repeat` (TILE) e `background-size` em px por
+  camada (hoje só `cover`/`contain`; exigem `imageTransform`/`scalingFactor`).

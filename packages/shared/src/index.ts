@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 8 as const;
+export const SCHEMA_VERSION = 9 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -194,7 +194,7 @@ export interface Shadow {
 
 /** Uma camada de background-image: imagem (data URL) ou gradiente. */
 export type BackgroundLayer =
-  | { kind: "image"; src: string }
+  | { kind: "image"; src: string; scaleMode: "FILL" | "FIT" }
   | { kind: "gradient"; gradient: Gradient };
 
 export interface Gradient {

@@ -167,6 +167,20 @@ if (glass) {
   check("glass: backgroundBlur === 8", glass.styles?.backgroundBlur === 8);
 }
 
+// --- background-size: cover/contain → FILL/FIT ---
+const bgContain = findByName(root, "bg-contain");
+check("bg-contain: nó encontrado", !!bgContain);
+if (bgContain) {
+  const l = bgContain.styles?.backgroundLayers?.[0];
+  check("bg-contain: camada imagem", l?.kind === "image");
+  check("bg-contain: scaleMode FIT", l?.scaleMode === "FIT");
+}
+const bgCover = findByName(root, "section.bg");
+if (bgCover) {
+  const l = bgCover.styles?.backgroundLayers?.[0];
+  check("bg (cover): scaleMode FILL", l?.kind === "image" && l?.scaleMode === "FILL");
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

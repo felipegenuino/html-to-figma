@@ -95,7 +95,7 @@ async function buildElement(
       if (g) fills.push(g);
     } else if (layer.src.startsWith("data:")) {
       const img = imageFromDataUrl(layer.src);
-      if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: "FILL" });
+      if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: layer.scaleMode });
     }
   }
   f.fills = fills;

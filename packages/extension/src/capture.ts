@@ -464,8 +464,10 @@ async function pseudoStyles(
   const bg = pcs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  const backgroundLayers = await parseBackgroundLayers(pcs.backgroundImage, (url) =>
-    toDataURL(url, w, h)
+  const backgroundLayers = await parseBackgroundLayers(
+    pcs.backgroundImage,
+    pcs.backgroundSize,
+    (url) => toDataURL(url, w, h)
   );
 
   return {
@@ -818,7 +820,7 @@ async function elementStyles(
   const bg = cs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  const backgroundLayers = await parseBackgroundLayers(cs.backgroundImage, (url) => {
+  const backgroundLayers = await parseBackgroundLayers(cs.backgroundImage, cs.backgroundSize, (url) => {
     const r = el.getBoundingClientRect();
     return toDataURL(url, r.width, r.height);
   });
@@ -934,15 +936,24 @@ function parseShadows(v: string): Shadow[] {
  */
 async function parseBackgroundLayers(
   bgi: string,
+  bgSize: string,
   resolveImage: (url: string) => Promise<string | null>
 ): Promise<BackgroundLayer[]> {
   if (!bgi || bgi === "none") return [];
+  const sizes = splitTopLevel(bgSize);
+  const fitFor = (i: number): "FILL" | "FIT" => {
+    const s = (sizes[i] ?? sizes[0] ?? "").trim();
+    if (s === "contain") return "FIT";
+    return "FILL"; // cover, auto, px… → FILL
+  };
   const layers: BackgroundLayer[] = [];
-  for (const part of splitTopLevel(bgi)) {
+  const parts = splitTopLevel(bgi);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
     const urlMatch = part.match(/url\(["']?([^"')]+)["']?\)/);
     if (urlMatch) {
       const src = await resolveImage(urlMatch[1]);
-      if (src) layers.push({ kind: "image", src });
+      if (src) layers.push({ kind: "image", src, scaleMode: fitFor(i) });
     } else {
       const gradient = parseGradient(part);
       if (gradient) layers.push({ kind: "gradient", gradient });
