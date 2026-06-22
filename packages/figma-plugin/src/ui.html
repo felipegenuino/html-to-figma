@@ -37,15 +37,22 @@
     button:hover { filter: brightness(1.1); }
     #status { min-height: 14px; font-size: 11px; color: #9c9; }
     #status.error { color: #e88; }
+    #relay { font-size: 10px; color: #888; display: flex; align-items: center; gap: 6px; }
+    #dot { width: 8px; height: 8px; border-radius: 50%; background: #777; flex: none; }
+    #dot.on { background: #2ec27e; }
   </style>
 </head>
 <body>
   <textarea id="json" placeholder="Cole aqui o JSON copiado pela extensão (Ctrl+V)…"></textarea>
   <button id="import">Importar</button>
   <div id="status"></div>
+  <div id="relay"><span id="dot"></span><span id="relay-text">Servidor: conectando…</span></div>
   <script>
+    const RELAY_URL = "ws://localhost:7341";
     const ta = document.getElementById("json");
     const statusEl = document.getElementById("status");
+    const dot = document.getElementById("dot");
+    const relayText = document.getElementById("relay-text");
 
     // Tenta ler o clipboard automaticamente ao focar (nem sempre permitido)
     ta.addEventListener("focus", async () => {
@@ -56,6 +63,12 @@
       } catch { /* sem permissão — usuário cola manualmente */ }
     });
 
+    function runImport(json) {
+      statusEl.textContent = "Importando…";
+      statusEl.className = "";
+      parent.postMessage({ pluginMessage: { type: "import", json } }, "*");
+    }
+
     document.getElementById("import").onclick = () => {
       const json = ta.value.trim();
       if (!json) {
@@ -63,9 +76,7 @@
         statusEl.className = "error";
         return;
       }
-      statusEl.textContent = "Importando…";
-      statusEl.className = "";
-      parent.postMessage({ pluginMessage: { type: "import", json } }, "*");
+      runImport(json);
     };
 
     onmessage = (e) => {
@@ -74,6 +85,37 @@
       statusEl.textContent = msg.text;
       statusEl.className = msg.error ? "error" : "";
     };
+
+    // --- relay WebSocket: importa automaticamente o que a extensão enviar ---
+    function connectRelay() {
+      let ws;
+      try {
+        ws = new WebSocket(RELAY_URL);
+      } catch {
+        setRelay(false, "Servidor: indisponível");
+        return;
+      }
+      ws.onopen = () => setRelay(true, "Servidor: conectado");
+      ws.onmessage = (ev) => {
+        const text = typeof ev.data === "string" ? ev.data : "";
+        if (!text.includes("h2f-capture")) return;
+        ta.value = text;
+        setRelay(true, "Servidor: captura recebida");
+        runImport(text);
+      };
+      ws.onclose = () => {
+        setRelay(false, "Servidor: reconectando…");
+        setTimeout(connectRelay, 2000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    }
+
+    function setRelay(on, text) {
+      dot.className = on ? "on" : "";
+      relayText.textContent = text;
+    }
+
+    connectRelay();
   </script>
 </body>
 </html>

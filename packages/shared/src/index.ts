@@ -8,10 +8,14 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 3 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
+
+/** Servidor relay local (WebSocket) para transferir capturas grandes sem clipboard. */
+export const RELAY_PORT = 7341 as const;
+export const RELAY_URL = `ws://localhost:${RELAY_PORT}` as const;
 
 export interface CaptureDocument {
   marker: typeof CLIPBOARD_MARKER;
@@ -82,10 +86,19 @@ export interface SvgNode extends BaseNode {
   svg: string;
 }
 
-/** display:flex detectado → Auto Layout no Figma. */
+/** display:flex ou display:grid detectado → Auto Layout / Grid no Figma. */
 export interface AutoLayout {
+  /** "flex" → Auto Layout 1D; "grid" → Grid layout do Figma. */
+  mode: "flex" | "grid";
   direction: "horizontal" | "vertical";
+  /** flex-direction *-reverse: a ordem dos filhos é invertida no Figma. */
+  reverse: boolean;
   gap: number;
+  /** Grid: número de colunas/linhas e seus gaps (em px). */
+  columns: number;
+  rows: number;
+  rowGap: number;
+  columnGap: number;
   paddingTop: number;
   paddingRight: number;
   paddingBottom: number;
@@ -105,6 +118,12 @@ export interface ElementStyles {
   opacity: number;
   overflowHidden: boolean;
   layout: AutoLayout | null;
+  /**
+   * Rotação em graus extraída de `transform` (sentido CSS, horário positivo).
+   * Quando != 0, o `rect` representa a caixa NÃO-transformada e o nó é
+   * rotacionado no Figma em torno do centro. 0 = sem rotação.
+   */
+  rotation: number;
 }
 
 export interface TextStyles {

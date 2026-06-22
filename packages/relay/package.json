@@ -1,0 +1,12 @@
+{
+  "name": "@h2f/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "h2f-relay": "server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

@@ -126,33 +126,15 @@ async function buildElement(
   f.opacity = s.opacity;
   f.clipsContent = s.overflowHidden;
 
-  if (s.layout) {
-    const L = s.layout;
-    f.layoutMode = L.direction === "horizontal" ? "HORIZONTAL" : "VERTICAL";
-    f.primaryAxisSizingMode = "FIXED";
-    f.counterAxisSizingMode = "FIXED";
-    f.itemSpacing = L.gap;
-    f.paddingTop = L.paddingTop;
-    f.paddingRight = L.paddingRight;
-    f.paddingBottom = L.paddingBottom;
-    f.paddingLeft = L.paddingLeft;
-    f.primaryAxisAlignItems = ({
-      start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN",
-    } as const)[L.justifyContent];
-    const counter = ({
-      start: "MIN", center: "CENTER", end: "MAX", baseline: "BASELINE", stretch: "MIN",
-    } as const)[L.alignItems];
-    // BASELINE so vale para HORIZONTAL
-    f.counterAxisAlignItems = counter === "BASELINE" && f.layoutMode === "VERTICAL" ? "MIN" : counter;
-    if (L.wrap && f.layoutMode === "HORIZONTAL") {
-      f.layoutWrap = "WRAP";
-      f.counterAxisSpacing = L.gap;
-    }
-    // garante o tamanho capturado depois de ligar o layout
-    f.resize(Math.max(n.rect.width, 0.01), Math.max(n.rect.height, 0.01));
-  }
+  if (s.layout) applyLayout(f, s.layout, n.rect);
 
-  for (const child of n.children) {
+  // flex *-reverse: o Figma não tem "reverse" — invertemos a ordem dos filhos.
+  const children =
+    s.layout && s.layout.mode === "flex" && s.layout.reverse
+      ? [...n.children].reverse()
+      : n.children;
+
+  for (const child of children) {
     const c = await buildNode(child, { x: n.rect.x, y: n.rect.y });
     if (c) {
       f.appendChild(c);
@@ -163,7 +145,75 @@ async function buildElement(
       }
     }
   }
+
+  // transform: rotação (depois dos filhos, já que rotaciona o frame inteiro).
+  if (s.rotation) applyRotation(f, n.rect, offset, s.rotation);
   return f;
+}
+
+/**
+ * Aplica rotação CSS (horária) ao nó. O Figma rotaciona no sentido anti-horário
+ * em torno do canto superior-esquerdo, então invertemos o ângulo e reposicionamos
+ * o canto para manter o centro da caixa fixo no ponto capturado.
+ */
+function applyRotation(
+  node: SceneNode,
+  rect: Rect,
+  offset: { x: number; y: number },
+  cssDegrees: number
+) {
+  const theta = (-cssDegrees * Math.PI) / 180; // Figma: anti-horário positivo
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  // Centro desejado em coordenadas locais ao pai.
+  const cx = rect.x - offset.x + rect.width / 2;
+  const cy = rect.y - offset.y + rect.height / 2;
+  // Vetor centro→ canto antes da rotação e sua imagem rotacionada (matriz do Figma).
+  const vx = rect.width / 2;
+  const vy = rect.height / 2;
+  const rvx = cos * vx + sin * vy;
+  const rvy = -sin * vx + cos * vy;
+  if (!("rotation" in node)) return;
+  node.x = cx - rvx;
+  node.y = cy - rvy;
+  node.rotation = -cssDegrees;
+}
+
+/** Configura Auto Layout (flex) ou Grid no frame, preservando o tamanho capturado. */
+function applyLayout(f: FrameNode, L: NonNullable<ElementNode["styles"]["layout"]>, rect: Rect) {
+  f.paddingTop = L.paddingTop;
+  f.paddingRight = L.paddingRight;
+  f.paddingBottom = L.paddingBottom;
+  f.paddingLeft = L.paddingLeft;
+
+  if (L.mode === "grid") {
+    f.layoutMode = "GRID";
+    f.gridColumnCount = Math.max(L.columns, 1);
+    f.gridRowCount = Math.max(L.rows, 1);
+    f.gridColumnGap = L.columnGap;
+    f.gridRowGap = L.rowGap;
+    f.resize(Math.max(rect.width, 0.01), Math.max(rect.height, 0.01));
+    return;
+  }
+
+  f.layoutMode = L.direction === "horizontal" ? "HORIZONTAL" : "VERTICAL";
+  f.primaryAxisSizingMode = "FIXED";
+  f.counterAxisSizingMode = "FIXED";
+  f.itemSpacing = L.gap;
+  f.primaryAxisAlignItems = ({
+    start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN",
+  } as const)[L.justifyContent];
+  const counter = ({
+    start: "MIN", center: "CENTER", end: "MAX", baseline: "BASELINE", stretch: "MIN",
+  } as const)[L.alignItems];
+  // BASELINE so vale para HORIZONTAL
+  f.counterAxisAlignItems = counter === "BASELINE" && f.layoutMode === "VERTICAL" ? "MIN" : counter;
+  if (L.wrap && f.layoutMode === "HORIZONTAL") {
+    f.layoutWrap = "WRAP";
+    f.counterAxisSpacing = L.gap;
+  }
+  // garante o tamanho capturado depois de ligar o layout
+  f.resize(Math.max(rect.width, 0.01), Math.max(rect.height, 0.01));
 }
 
 // --------------------------------------------------------------------- text

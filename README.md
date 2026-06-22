@@ -9,6 +9,7 @@ packages/
   shared/        Tipos do JSON intermediário (CaptureDocument, CapturedNode…)
   extension/     Extensão MV3 — popup, content script de captura, picker de elemento
   figma-plugin/  Plugin do Figma — cola o JSON e reconstrói frames/textos/imagens/SVGs
+  relay/         Servidor WebSocket local (sem deps) — transfere capturas grandes
 ```
 
 ## Pipeline
@@ -34,6 +35,32 @@ npm run build
 1. Na página alvo, clique na extensão → "Capturar página inteira" ou "Selecionar elemento…" (Esc cancela).
 2. No Figma, rode o plugin, cole o JSON (Ctrl+V) e clique em "Importar".
 
+### Transferência via servidor (opcional, para payloads grandes)
+
+Capturas com muitas imagens estouram o clipboard. Rode o relay local:
+
+```bash
+npm run relay   # ws://localhost:7341 (porta via H2F_RELAY_PORT)
+```
+
+Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
+Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
+Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
+
+## Já resolvido (v0.4)
+
+- **Grid**: `display: grid` vira Grid layout nativo do Figma (`layoutMode = GRID`)
+  com contagem de colunas/linhas e gaps; `flex-direction: *-reverse` é mapeado
+  invertendo a ordem dos filhos.
+- **Pseudo-elementos**: `::before`/`::after` com `content` viram TextNodes (texto)
+  ou frames decorativos (background/border), posicionados de forma aproximada.
+- **transform**: rotação (`rotate`/`matrix`) é extraída e aplicada via
+  `node.rotation`, usando a caixa não-transformada para preservar o centro.
+- **Screenshot por elemento**: `<canvas>`, `<video>` e elementos com `filter`
+  são rasterizados via `captureVisibleTab` (recorte ×DPR) como fallback.
+- **Relay WebSocket**: servidor local sem dependências transfere capturas grandes
+  fora do clipboard, com buffer da última captura para o plugin que conecta depois.
+
 ## Já resolvido (v0.3)
 
 - **Auto Layout**: `display: flex` (row/column) vira Auto Layout no Figma —
@@ -52,14 +79,17 @@ npm run build
 
 ## Limitações conhecidas
 
-- Posicionamento absoluto (sem Auto Layout).
 - Gradientes: só `linear-gradient` simples; borda uniforme (usa `border-top`).
-- Pseudo-elementos (`::before`/`::after`), `transform`, `filter` e iframes são ignorados.
-- Fontes precisam existir no Figma; senão cai para Inter.
+- Pseudo-elementos: geometria aproximada (sem caixa real no DOM); `content`
+  com `url()`/`counter()` não é resolvido.
+- `transform`: só rotação (escala/skew/`matrix3d` ignorados); conteúdo aninhado
+  de elementos rotacionados pode ficar levemente desalinhado.
+- Screenshot por elemento só funciona se o elemento couber no viewport visível.
+- `iframes` continuam ignorados; fontes precisam existir no Figma (senão, Inter).
 
 ## Próximos passos
 
-- Auto Layout para `display: grid` e flex `*-reverse`.
-- Captura de pseudo-elementos e `transform`.
-- Screenshot por elemento como fallback de fidelidade.
-- Transferência via WebSocket/servidor local em vez de clipboard (payloads grandes).
+- Grid com posicionamento explícito (`grid-row`/`grid-column`) e tracks não-uniformes.
+- Escala/skew em `transform` e suporte a `matrix3d`.
+- Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
+- `radial-gradient`/`conic-gradient` e bordas por lado.

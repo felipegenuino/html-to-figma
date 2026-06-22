@@ -1,4 +1,5 @@
 /// <reference types="chrome" />
+import { deliverViaRelay } from "./transport";
 
 const statusEl = document.getElementById("status")!;
 
@@ -29,9 +30,14 @@ document.getElementById("capture-page")!.addEventListener("click", async () => {
     const res: { ok: boolean; json?: string; error?: string } =
       await chrome.tabs.sendMessage(tab.id!, { type: "capture-page" });
     if (!res.ok) throw new Error(res.error ?? "Falha na captura");
-    // Clipboard é escrito aqui no popup, que tem foco (content script não tem).
-    await navigator.clipboard.writeText(res.json!);
-    setStatus("✓ Copiado! Cole no plugin do Figma.");
+    // Relay local primeiro (sem limite de tamanho); senão, clipboard.
+    if (await deliverViaRelay(res.json!)) {
+      setStatus("✓ Enviado ao Figma via servidor.");
+    } else {
+      // Clipboard é escrito aqui no popup, que tem foco (content script não tem).
+      await navigator.clipboard.writeText(res.json!);
+      setStatus("✓ Copiado! Cole no plugin do Figma.");
+    }
   } catch (e) {
     setStatus(String(e instanceof Error ? e.message : e), true);
   }
