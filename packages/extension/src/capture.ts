@@ -337,6 +337,9 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
         src: shot,
         objectFit: "fill",
         borderRadius: parseRadius(cs),
+        borders: parseBorders(cs),
+        boxShadow: parseShadows(cs.boxShadow),
+        opacity: Number(cs.opacity),
       };
     }
     // falhou — segue com a reconstrução normal
@@ -630,6 +633,9 @@ async function imageNode(
     src: (await toDataURL(url, r.width, r.height)) ?? url,
     objectFit: (cs.objectFit || "fill") as ImageNode["objectFit"],
     borderRadius: parseRadius(cs),
+    borders: parseBorders(cs),
+    boxShadow: parseShadows(cs.boxShadow),
+    opacity: Number(cs.opacity),
   };
 }
 

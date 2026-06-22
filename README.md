@@ -47,6 +47,11 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.14)
+
+- **Estilo de `<img>`**: imagens (`<img>`) agora também levam `border`,
+  `box-shadow` e `opacity` — antes só `src`/`object-fit`/`border-radius`.
+
 ## Já resolvido (v0.13)
 
 - **Texto com gradiente**: `background-clip: text` (+ gradiente) aplica o gradiente

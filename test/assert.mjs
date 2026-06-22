@@ -212,6 +212,17 @@ if (gradText) {
   check("grad-text: gradiente >= 2 stops", (gradText.styles?.gradient?.stops?.length ?? 0) >= 2);
 }
 
+// --- <img> com border/shadow/opacity ---
+const imgStyled = findByName(root, "img-styled");
+check("img-styled: nó encontrado", !!imgStyled);
+if (imgStyled) {
+  check("img-styled: é image", imgStyled.type === "image");
+  check("img-styled: opacity 0.8", imgStyled.opacity === 0.8);
+  check("img-styled: border 2px", imgStyled.borders?.top?.width === 2);
+  check("img-styled: 1 box-shadow", imgStyled.boxShadow?.length === 1);
+  check("img-styled: shadow blur 8", imgStyled.boxShadow?.[0]?.blur === 8);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

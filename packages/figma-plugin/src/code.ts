@@ -424,7 +424,41 @@ function buildImage(n: ImageNode, offset: { x: number; y: number }): RectangleNo
     r.fills = [{ type: "SOLID", color: { r: 0.85, g: 0.85, b: 0.85 } }];
     r.name = `${n.name} (imagem não capturada)`;
   }
+
+  applyImageBorders(r, n.borders);
+  r.effects = n.boxShadow.flatMap((sh): Effect[] => {
+    const c = parseRgba(sh.color);
+    if (!c) return [];
+    return [{
+      type: sh.inset ? "INNER_SHADOW" : "DROP_SHADOW",
+      color: { r: c.r, g: c.g, b: c.b, a: c.a },
+      offset: { x: sh.offsetX, y: sh.offsetY },
+      radius: sh.blur,
+      spread: sh.spread,
+      visible: true,
+      blendMode: "NORMAL",
+    }];
+  });
+  r.opacity = n.opacity;
   return r;
+}
+
+/** Borda nativa para imagens (RectangleNode): larguras por lado + 1 cor. */
+function applyImageBorders(r: RectangleNode, borders: Borders | null): void {
+  if (!borders) return;
+  const visible = SIDES.map((side) => borders[side]).filter((b): b is SideBorder => b !== null);
+  if (visible.length === 0) return;
+  const c = parseRgba(visible[0].color);
+  if (!c) return;
+  r.strokes = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+  r.strokeAlign = "INSIDE";
+  r.strokeTopWeight = borders.top?.width ?? 0;
+  r.strokeRightWeight = borders.right?.width ?? 0;
+  r.strokeBottomWeight = borders.bottom?.width ?? 0;
+  r.strokeLeftWeight = borders.left?.width ?? 0;
+  const st = visible[0].style;
+  if (st === "dashed") r.dashPattern = [visible[0].width * 3, visible[0].width * 2];
+  if (st === "dotted") r.dashPattern = [visible[0].width, visible[0].width];
 }
 
 function imageFromDataUrl(dataUrl: string): Image | null {

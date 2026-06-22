@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 12 as const;
+export const SCHEMA_VERSION = 13 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -88,6 +88,9 @@ export interface ImageNode extends BaseNode {
   src: string;
   objectFit: "fill" | "contain" | "cover" | "none" | "scale-down";
   borderRadius: BorderRadius;
+  borders: Borders | null;
+  boxShadow: Shadow[];
+  opacity: number;
 }
 
 /** SVG inline → importado via createNodeFromSvg. */
