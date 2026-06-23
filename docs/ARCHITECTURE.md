@@ -29,10 +29,13 @@ Ordem atual (cada passo existe por um motivo descoberto na marra):
    cobrindo área grande, ou casando `[role=dialog]`/`[aria-modal]`/`.overlay`/
    `.menu`/`.modal`/`.drawer`; sobe para o container mais externo (junta menu
    fatiado) e remove aninhados.
-4. **Volta ao topo + revela RÁPIDO** — `scrollTo(0,0)` e `forceRevealHidden()`
-   logo em seguida. Conteúdo virtualizado desmonta ao sair da viewport; capturar
-   rápido evita perdê-lo (esperar demais aqui = seções do meio somem).
-5. **`walkElement(root)`** — reconstrói a árvore (estática, pulando os overlays).
+4. **Volta ao topo + ASSENTA + revela** — `scrollTo(0,0)`, espera ~350ms (o
+   parallax JS do hero estabiliza; o topo fica em vista, então não desmonta) e
+   `forceRevealHidden()`.
+5. **`walkElement(root)` com SCROLL-FOLLOWING** — reconstrói a árvore (estática,
+   pulando os overlays), rolando cada elemento off-screen para a viewport antes
+   de medir (re-monta conteúdo virtualizado, revela o que nasceu escondido).
+   Resolve parallax (hero lido assentado no topo) e virtualização de uma vez.
 6. **Estado "click"** — para cada overlay: `forceOverlayVisible()` + `walkElement`,
    incluído só se tiver conteúdo real (`hasVisibleContent`: texto ou imagem
    raster; SVG sozinho não conta — descarta lightbox vazio).
@@ -90,26 +93,27 @@ Capturar tudo num único snapshot no topo tem requisitos conflitantes:
 
 Escolha atual: **capturar rápido** (conteúdo completo > pixel do hero).
 
-## Próximo grande passo: capturar durante o scroll
+## Scroll-following (implementado)
 
-Resolve parallax E virtualização de uma vez: ler a geometria de cada elemento
-**enquanto ele está na viewport**, descendo a página, em vez de um snapshot no
-topo. Design proposto (implementar COM verificação via MCP):
+Resolve parallax E virtualização de uma vez: lê a geometria de cada elemento
+**enquanto está na viewport**, descendo a página, em vez de um snapshot no topo.
 
-1. **`walkElement(el, inFixed)`** — propaga um booleano `inFixed` (true quando o
-   elemento ou um ancestral é `position:fixed`).
-2. **`pageRect(r, inFixed)`** — para `inFixed`, `y = r.top` (sem somar `scrollY`),
-   pois fixos são presos à viewport; a posição "scroll-0" é `r.top`. Threadar
-   `inFixed` por svg/image/text/pseudo também (a fixação propaga para a subárvore).
-3. **Scroll-following** — no topo de `walkElement`, se `!inFixed` e o elemento
-   está abaixo da viewport, `scrollIntoView` + `await frame` + revelar a
-   subárvore (re-montados podem nascer escondidos), e só então ler `r`. Scroll
-   monotônico (DFS ~ top-down) ⇒ ~`alturaPágina/viewport` scrolls.
-4. **Hero**: lido primeiro, com a página assentada no topo ⇒ parallax correto.
-   **Mid-page**: re-montado ao ser alcançado ⇒ não some.
-5. **`sticky`**: limite — quando "grudado" durante o scroll pode ficar deslocado;
-   tratar como `fixed` quando detectar que está preso, ou aceitar aproximação.
+- **`scrollIntoViewIfNeeded(el)`** no topo de `walkElement`: se o elemento está
+  fora da viewport, `scrollIntoView` + espera (IO/mount/lazy) + `forceRevealSubtree`
+  (re-montados podem nascer escondidos), e só então mede. Scroll monotônico
+  (DFS ~ top-down) ⇒ ~`alturaPágina/viewport` scrolls; on-screen não rola.
+- **Coordenadas com fixed**: `fixedScrollSuppressed` (contador de módulo) zera o
+  offset de scroll dentro de subárvores `position:fixed` (presas à viewport), de
+  forma que `pageRect`/`pseudoNode`/`untransformedRect` dão a posição "scroll-0".
+  walkElement incrementa/decrementa ao entrar/sair de um fixed; fixos não rolam.
+- **Hero**: lido primeiro, com a página assentada no topo ⇒ parallax correto.
+  **Mid-page virtualizado**: re-montado ao ser alcançado ⇒ não some.
 
-Riscos a validar no site real: posição de `fixed/sticky`, performance (esperas
-por viewport) e semântica de parallax em elementos do meio. Por isso **não foi
-implementado às cegas** — requer o loop de verificação MCP.
+Coberto headless por `test/fixture.html` (`.virt-test` desmonta off-screen via
+IntersectionObserver) + assert. Limite: `sticky` "grudado" durante o scroll pode
+ficar deslocado (tratado como fluxo normal).
+
+## Próximos passos
+- `sticky` preso durante o scroll-following (tratar como fixed quando grudado).
+- Escala/skew em `transform` e `matrix3d`.
+- `object-position`/`background-position`/`background-repeat` (imageTransform/TILE).

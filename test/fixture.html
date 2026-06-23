@@ -144,5 +144,22 @@
   <img class="img-styled" alt="" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMzY2Ii8+PC9zdmc+">
   <section class="reveal-test">revelado</section>
   <div class="menu-overlay"><a class="menu-link">Menu Aberto</a></div>
+
+  <!-- 22. Virtualização: conteúdo que desmonta ao sair da viewport (testa scroll-following) -->
+  <div style="height: 1600px"></div>
+  <section class="virt-test"><span class="virt-content">Virtualizado Visivel</span></section>
+  <script>
+    (function () {
+      var box = document.querySelector('.virt-test');
+      var html = box.innerHTML;
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { if (!box.firstChild) box.innerHTML = html; }
+          else { box.innerHTML = ''; }
+        });
+      });
+      io.observe(box);
+    })();
+  </script>
 </body>
 </html>

@@ -171,17 +171,20 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 - Só `blur()` vira efeito nativo; outros filtros (`brightness`, `grayscale`,
   `drop-shadow`…) continuam no fallback de screenshot.
 - `iframes` continuam ignorados; fontes precisam existir no Figma (senão, Inter).
-- **Parallax/transform via JS**: a captura é um snapshot único no topo, então
-  elementos cuja posição é animada por JS a cada frame (ex.: imagem de hero com
-  parallax) podem ficar deslocados alguns px — o freeze de CSS não controla JS.
-- **Conteúdo virtualizado** (que desmonta ao sair da viewport) é capturado
-  rápido, antes do desmonte; em páginas muito pesadas pode haver corrida.
+- `sticky` "grudado" durante o scroll-following pode ficar deslocado (tratado
+  como fluxo normal).
+
+## Já resolvido (v0.17)
+
+- **Scroll-following**: a captura rola cada elemento off-screen para a viewport
+  antes de medir, re-montando conteúdo virtualizado e lendo a geometria no lugar
+  certo; o hero é lido assentado no topo (parallax JS estabilizado). Resolve de
+  uma vez parallax e conteúdo que desmonta off-screen. Coords de `fixed` ficam
+  corretas via supressão do offset de scroll na subárvore fixa.
 
 ## Próximos passos
 
-- **Capturar durante o scroll**: fotografar cada seção enquanto está na viewport,
-  em vez de um snapshot único no topo — resolveria de uma vez parallax JS e
-  conteúdo virtualizado que desmonta off-screen.
+- `sticky` preso durante o scroll-following.
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
 - `background-position`/`background-repeat` (TILE) e `background-size` em px por

@@ -237,6 +237,10 @@ check("overlay: doc.overlays existe", Array.isArray(doc.overlays));
 const menuOverlay = (doc.overlays ?? []).map((o) => findByName(o, "Menu Aberto")).find(Boolean);
 check("overlay: menu capturado como overlay separado", !!menuOverlay);
 
+// --- scroll-following: conteúdo virtualizado (desmonta off-screen) é capturado ---
+const virt = findByName(root, "Virtualizado Visivel");
+check("scroll-following: conteúdo virtualizado capturado", !!virt);
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

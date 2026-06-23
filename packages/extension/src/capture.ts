@@ -27,31 +27,30 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // Normaliza o scroll: elementos fixed/sticky ficam nas coordenadas certas
   const prevX = scrollX;
   const prevY = scrollY;
-  // 0) congela transitions/animations: animações de entrada (translateY/scale ao
-  //    revelar) saltam para o estado final em vez de serem capturadas no meio
-  //    (ex.: imagem do hero parando fora da caixa).
-  // 1) rola até o footer disparando lazy-load, IntersectionObservers e mounts
-  //    (conteúdo que só monta quando entra na viewport);
-  // 2) com tudo montado/revelado no fim da página, força visível (inline
-  //    !important persiste ao voltar ao topo);
-  // 3) volta ao topo para fixed/sticky ficarem nas coordenadas certas.
+  // Pipeline:
+  // 0) freeze de transitions/animations (animações de entrada saltam ao final);
+  // 1) rola até o footer (lazy-load, IntersectionObservers, mounts);
+  // 2) detecta overlays interativos (menu/modal) para virarem estados "click";
+  // 3) volta ao topo e ASSENTA (parallax JS do hero estabiliza — o topo fica em
+  //    vista, então não desmonta); revela o escondido;
+  // 4) walkElement faz SCROLL-FOLLOWING: rola cada elemento off-screen à viewport
+  //    antes de medir, re-montando conteúdo virtualizado e lendo a geometria
+  //    no lugar certo. Resolve parallax (hero lido assentado no topo) e
+  //    virtualização (conteúdo re-montado ao ser alcançado) de uma vez.
   const restoreFreeze = freezeAnimations();
   await preloadLazyContent();
-  // Overlays interativos detectados no footer (já montados/revelados).
   const overlayRoots = findOverlayRoots();
   overlayRoots.forEach((o) => skipInWalk.add(o));
-  // Volta ao topo e revela/captura RÁPIDO: conteúdo que desmonta ao sair da
-  // viewport (virtualização) precisa ser pego antes do desmonte. Esperar demais
-  // aqui faz o React remover seções do meio (ex.: passos do processo). O freeze
-  // já evita animações no meio; um respiro curto basta para o layout assentar.
   scrollTo(0, 0);
-  const restoreReveal = forceRevealHidden(overlayRoots);
   await nextFrame();
+  await sleep(350); // parallax/JS do hero assenta (topo em vista, sem desmonte)
   await nextFrame();
+  forceRevealHidden(overlayRoots);
   try {
     const node = await walkElement(root);
 
     // Estado "click": cada overlay revelado e capturado como nó separado.
+    scrollTo(0, 0); // o scroll-following pode ter descido a página
     const overlays: CapturedNode[] = [];
     for (const ov of overlayRoots) {
       skipInWalk.delete(ov);
@@ -78,8 +77,9 @@ export async function capture(root: Element): Promise<CaptureDocument> {
       overlays,
     };
   } finally {
-    restoreReveal();
+    restoreReveals();
     restoreFreeze();
+    fixedScrollSuppressed = 0;
     skipInWalk.clear();
     scrollTo(prevX, prevY);
   }
@@ -118,19 +118,51 @@ function forceStyle(el: HTMLElement, prop: string, val: string, undo: (() => voi
   );
 }
 
-function forceRevealHidden(exclude: Element[] = []): () => void {
-  const undo: (() => void)[] = [];
+/** Desfazeres de reveal acumulados durante a captura (restaurados no finally). */
+let revealUndos: (() => void)[] = [];
+
+function revealIfHidden(el: HTMLElement) {
+  if (el.tagName === "SCRIPT" || el.tagName === "STYLE") return;
+  const cs = getComputedStyle(el);
+  if (parseFloat(cs.opacity) === 0) forceStyle(el, "opacity", "1", revealUndos);
+  if (cs.visibility === "hidden") forceStyle(el, "visibility", "visible", revealUndos);
+  if (cs.getPropertyValue("content-visibility") === "auto")
+    forceStyle(el, "content-visibility", "visible", revealUndos);
+}
+
+function forceRevealHidden(exclude: Element[] = []): void {
   const isExcluded = (el: Element) => exclude.some((o) => o === el || o.contains(el));
   for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
-    if (el.tagName === "SCRIPT" || el.tagName === "STYLE") continue;
     if (isExcluded(el)) continue; // overlays interativos ficam para o estado "click"
-    const cs = getComputedStyle(el);
-    if (parseFloat(cs.opacity) === 0) forceStyle(el, "opacity", "1", undo);
-    if (cs.visibility === "hidden") forceStyle(el, "visibility", "visible", undo);
-    if (cs.getPropertyValue("content-visibility") === "auto")
-      forceStyle(el, "content-visibility", "visible", undo);
+    revealIfHidden(el);
   }
-  return () => undo.forEach((f) => f());
+}
+
+/** Revela a subárvore de um elemento (usado após montar conteúdo virtualizado). */
+function forceRevealSubtree(root: HTMLElement) {
+  revealIfHidden(root);
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) revealIfHidden(el);
+}
+
+function restoreReveals() {
+  for (const f of revealUndos) f();
+  revealUndos = [];
+}
+
+/**
+ * Scroll-following: traz um elemento off-screen para a viewport, montando
+ * conteúdo virtualizado (que desmonta fora da tela), e revela o que nasceu
+ * escondido. Só age se o elemento está fora da viewport.
+ */
+async function scrollIntoViewIfNeeded(el: Element): Promise<void> {
+  const r = el.getBoundingClientRect();
+  const offscreen = r.top >= innerHeight || r.bottom <= 0;
+  if (!offscreen) return;
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  await nextFrame();
+  await sleep(60); // IntersectionObservers/mount + lazy assets
+  await nextFrame();
+  forceRevealSubtree(el as HTMLElement);
 }
 
 /**
@@ -263,10 +295,20 @@ function emptyRoot(): ElementNode {
 
 // ---------------------------------------------------------------- geometria
 
+/**
+ * Suprime o offset de scroll dentro de subárvores `position:fixed` — fixos são
+ * presos à viewport, então sua posição "de página" (como no topo) é o próprio
+ * r.top/left. walkElement incrementa/decrementa ao entrar/sair de um fixed.
+ * Essencial no scroll-following, que lê elementos com a página rolada.
+ */
+let fixedScrollSuppressed = 0;
+const curScrollX = () => (fixedScrollSuppressed > 0 ? 0 : scrollX);
+const curScrollY = () => (fixedScrollSuppressed > 0 ? 0 : scrollY);
+
 function pageRect(r: DOMRect): Rect {
   return {
-    x: r.left + scrollX,
-    y: r.top + scrollY,
+    x: r.left + curScrollX(),
+    y: r.top + curScrollY(),
     width: r.width,
     height: r.height,
   };
@@ -489,10 +531,29 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
   if (SKIP_TAGS.has(el.tagName)) return null;
   if (skipInWalk.has(el)) return null;
 
+  const isFixed = getComputedStyle(el).position === "fixed";
+  // Scroll-following: traz elementos off-screen à viewport (re-monta conteúdo
+  // virtualizado) antes de medir. Fixos não rolam (presos à viewport); dentro
+  // de uma subárvore fixa também não.
+  if (!isFixed && fixedScrollSuppressed === 0) await scrollIntoViewIfNeeded(el);
+
   const cs = getComputedStyle(el);
   const r = el.getBoundingClientRect();
   if (isInvisible(el, cs, r)) return null;
 
+  if (isFixed) fixedScrollSuppressed++;
+  try {
+    return await buildWalkedNode(el, cs, r);
+  } finally {
+    if (isFixed) fixedScrollSuppressed--;
+  }
+}
+
+async function buildWalkedNode(
+  el: Element,
+  cs: CSSStyleDeclaration,
+  r: DOMRect
+): Promise<CapturedNode | null> {
   if (el instanceof SVGSVGElement) return svgNode(el, r);
   if (el instanceof HTMLImageElement) return await imageNode(el, cs, r);
 
@@ -598,13 +659,13 @@ async function pseudoNode(
   const parentCs = getComputedStyle(el);
   const padLeft = parseFloat(parentCs.borderLeftWidth) + parseFloat(parentCs.paddingLeft);
   const padTop = parseFloat(parentCs.borderTopWidth) + parseFloat(parentCs.paddingTop);
-  let x = parentRect.left + scrollX + padLeft;
-  let y = parentRect.top + scrollY + padTop;
+  let x = parentRect.left + curScrollX() + padLeft;
+  let y = parentRect.top + curScrollY() + padTop;
   if (pcs.position === "absolute" || pcs.position === "fixed") {
-    if (pcs.left !== "auto") x = parentRect.left + scrollX + parseFloat(pcs.left);
-    else if (pcs.right !== "auto") x = parentRect.right + scrollX - parseFloat(pcs.right) - w;
-    if (pcs.top !== "auto") y = parentRect.top + scrollY + parseFloat(pcs.top);
-    else if (pcs.bottom !== "auto") y = parentRect.bottom + scrollY - parseFloat(pcs.bottom) - h;
+    if (pcs.left !== "auto") x = parentRect.left + curScrollX() + parseFloat(pcs.left);
+    else if (pcs.right !== "auto") x = parentRect.right + curScrollX() - parseFloat(pcs.right) - w;
+    if (pcs.top !== "auto") y = parentRect.top + curScrollY() + parseFloat(pcs.top);
+    else if (pcs.bottom !== "auto") y = parentRect.bottom + curScrollY() - parseFloat(pcs.bottom) - h;
   }
 
   const name = `${el.tagName.toLowerCase()}${which}`;
@@ -662,8 +723,8 @@ async function pseudoStyles(
 
 /** Caixa de layout (sem transform), centrada no mesmo ponto que a AABB girada. */
 function untransformedRect(el: Element, r: DOMRect): Rect {
-  const cx = r.left + r.width / 2 + scrollX;
-  const cy = r.top + r.height / 2 + scrollY;
+  const cx = r.left + r.width / 2 + curScrollX();
+  const cy = r.top + r.height / 2 + curScrollY();
   const w = (el as HTMLElement).offsetWidth || r.width;
   const h = (el as HTMLElement).offsetHeight || r.height;
   return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
