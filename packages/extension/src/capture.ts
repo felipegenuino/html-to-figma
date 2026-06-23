@@ -53,7 +53,8 @@ export async function capture(root: Element): Promise<CaptureDocument> {
       const onode = await walkElement(ov);
       undo();
       skipInWalk.add(ov);
-      if (onode) overlays.push(onode);
+      // Só inclui overlays com conteúdo real (evita modais/lightboxes vazios).
+      if (onode && hasVisibleContent(onode)) overlays.push(onode);
     }
 
     return {
@@ -106,6 +107,13 @@ function forceRevealHidden(exclude: Element[] = []): () => void {
       forceStyle(el, "content-visibility", "visible", undo);
   }
   return () => undo.forEach((f) => f());
+}
+
+/** true se a subárvore tem texto não-vazio ou imagem/svg (conteúdo real). */
+function hasVisibleContent(n: CapturedNode): boolean {
+  if (n.type === "text") return n.content.trim().length > 0;
+  if (n.type === "image" || n.type === "svg") return true;
+  return (n.children ?? []).some(hasVisibleContent);
 }
 
 /**
