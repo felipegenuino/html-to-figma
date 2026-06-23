@@ -109,11 +109,16 @@ function forceRevealHidden(exclude: Element[] = []): () => void {
   return () => undo.forEach((f) => f());
 }
 
-/** true se a subárvore tem texto não-vazio ou imagem/svg (conteúdo real). */
+/**
+ * true se a subárvore tem conteúdo "de verdade": texto não-vazio ou imagem
+ * raster. SVG sozinho NÃO conta (são quase sempre ícones/setas decorativas —
+ * ex.: lightbox fechado só com setas ‹ ›, que não vale virar frame).
+ */
 function hasVisibleContent(n: CapturedNode): boolean {
   if (n.type === "text") return n.content.trim().length > 0;
-  if (n.type === "image" || n.type === "svg") return true;
-  return (n.children ?? []).some(hasVisibleContent);
+  if (n.type === "image") return true;
+  if (n.type === "svg") return false;
+  return n.children.some(hasVisibleContent);
 }
 
 /**
