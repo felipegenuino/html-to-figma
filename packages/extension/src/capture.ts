@@ -37,15 +37,17 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // 3) volta ao topo para fixed/sticky ficarem nas coordenadas certas.
   const restoreFreeze = freezeAnimations();
   await preloadLazyContent();
-  // Overlays interativos (menu/modal/drawer) viram estados "click" à parte:
-  // ficam escondidos na versão estática e são capturados separadamente.
+  // Overlays interativos detectados no footer (já montados/revelados).
   const overlayRoots = findOverlayRoots();
   overlayRoots.forEach((o) => skipInWalk.add(o));
-  const restoreReveal = forceRevealHidden(overlayRoots);
+  // Volta ao topo e ASSENTA antes de revelar: dá tempo do parallax/JS estabilizar
+  // e dos últimos itens de cada seção montarem (evita "últimas fileiras" sumindo).
   scrollTo(0, 0);
-  // dá tempo das animações (agora ~1ms) completarem no estado de topo
   await nextFrame();
-  await sleep(150);
+  await sleep(400);
+  await nextFrame();
+  // Revela DEPOIS de assentar, para pegar conteúdo que montou tarde.
+  const restoreReveal = forceRevealHidden(overlayRoots);
   await nextFrame();
   try {
     const node = await walkElement(root);
