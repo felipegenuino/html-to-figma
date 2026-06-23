@@ -9,7 +9,9 @@
     "build:extension": "npm run build -w @h2f/extension",
     "build:plugin": "npm run build -w @h2f/figma-plugin",
     "relay": "node packages/relay/server.mjs",
-    "test:capture": "node test/run_capture.mjs"
+    "test": "node test/assert.mjs",
+    "test:capture": "node test/run_capture.mjs",
+    "typecheck": "tsc --noEmit -p packages/extension/tsconfig.json && tsc --noEmit -p packages/figma-plugin/tsconfig.json"
   },
   "devDependencies": {
     "esbuild": "^0.21.0",
