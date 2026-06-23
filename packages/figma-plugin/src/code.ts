@@ -238,6 +238,13 @@ function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]
   );
   if (trivial) return;
 
+  // O placement vem da geometria; se duas células coincidem (ex.: rowSizes
+  // incompleto em grids de linhas auto, jogando vários itens em row 0), o Figma
+  // não consegue posicionar (uma célula = um nó). Mapeamento ambíguo → cai pro
+  // auto-flow em vez de crashar.
+  const cells = new Set(children.map((c) => `${c.area.rowStart},${c.area.columnStart}`));
+  if (cells.size < children.length) return;
+
   let maxCol = 0;
   let maxRow = 0;
   for (const { area } of children) {
@@ -260,23 +267,30 @@ function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]
   f.gridColumnCount = Math.max(baseCols, placeable.length, 1);
   f.gridRowCount = baseRows + 1;
 
-  placeable.forEach(({ node }, i) => {
-    const gc = node as unknown as GridPositionable;
-    gc.gridColumnSpan = 1;
-    gc.gridRowSpan = 1;
-    gc.setGridChildPosition(parkRow, i);
-  });
-  for (const { node, area } of placeable) {
-    (node as unknown as GridPositionable).setGridChildPosition(area.rowStart, area.columnStart);
+  try {
+    placeable.forEach(({ node }, i) => {
+      const gc = node as unknown as GridPositionable;
+      gc.gridColumnSpan = 1;
+      gc.gridRowSpan = 1;
+      gc.setGridChildPosition(parkRow, i);
+    });
+    for (const { node, area } of placeable) {
+      (node as unknown as GridPositionable).setGridChildPosition(area.rowStart, area.columnStart);
+    }
+    for (const { node, area } of placeable) {
+      const gc = node as unknown as GridPositionable;
+      gc.gridColumnSpan = area.columnSpan;
+      gc.gridRowSpan = area.rowSpan;
+    }
+    f.gridColumnCount = baseCols;
+    f.gridRowCount = baseRows;
+  } catch (e) {
+    // Colisão imprevista (ex.: spans sobrepostos) — degrada pro auto-flow do
+    // Figma em vez de abortar o import inteiro.
+    f.gridColumnCount = baseCols;
+    f.gridRowCount = baseRows;
+    f.gridItemsPositioning = "ROW_AUTO_FLOW";
   }
-  for (const { node, area } of placeable) {
-    const gc = node as unknown as GridPositionable;
-    gc.gridColumnSpan = area.columnSpan;
-    gc.gridRowSpan = area.rowSpan;
-  }
-
-  f.gridColumnCount = baseCols;
-  f.gridRowCount = baseRows;
 }
 
 function applyLayout(f: FrameNode, L: NonNullable<ElementNode["styles"]["layout"]>, rect: Rect) {
