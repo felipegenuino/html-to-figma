@@ -144,7 +144,22 @@ function findOverlayRoots(): HTMLElement[] {
     }
     if (bigCover || matchesSel) candidates.push(el);
   }
-  return candidates.filter((el) => !candidates.some((o) => o !== el && o.contains(el)));
+  // Sobe cada candidato para o container de overlay mais externo, evitando
+  // fatiar (ex.: cada item `span.overlay__num` do menu vira um overlay). Assim
+  // os 3 itens convergem para o `.nav__overlay`/`.menu` que os contém.
+  const climb = (el: HTMLElement): HTMLElement => {
+    let top = el;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      try {
+        if (p.matches(SELECTOR)) top = p;
+      } catch {
+        /* ignora */
+      }
+    }
+    return top;
+  };
+  const roots = Array.from(new Set(candidates.map(climb)));
+  return roots.filter((el) => !roots.some((o) => o !== el && o.contains(el)));
 }
 
 /** Força um overlay (e subárvore) visível para capturar o estado aberto. */
