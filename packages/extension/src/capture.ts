@@ -27,11 +27,15 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // Normaliza o scroll: elementos fixed/sticky ficam nas coordenadas certas
   const prevX = scrollX;
   const prevY = scrollY;
+  // 0) congela transitions/animations: animações de entrada (translateY/scale ao
+  //    revelar) saltam para o estado final em vez de serem capturadas no meio
+  //    (ex.: imagem do hero parando fora da caixa).
   // 1) rola até o footer disparando lazy-load, IntersectionObservers e mounts
   //    (conteúdo que só monta quando entra na viewport);
   // 2) com tudo montado/revelado no fim da página, força visível (inline
   //    !important persiste ao voltar ao topo);
   // 3) volta ao topo para fixed/sticky ficarem nas coordenadas certas.
+  const restoreFreeze = freezeAnimations();
   await preloadLazyContent();
   // Overlays interativos (menu/modal/drawer) viram estados "click" à parte:
   // ficam escondidos na versão estática e são capturados separadamente.
@@ -39,7 +43,9 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   overlayRoots.forEach((o) => skipInWalk.add(o));
   const restoreReveal = forceRevealHidden(overlayRoots);
   scrollTo(0, 0);
+  // dá tempo das animações (agora ~1ms) completarem no estado de topo
   await nextFrame();
+  await sleep(150);
   await nextFrame();
   try {
     const node = await walkElement(root);
@@ -72,6 +78,7 @@ export async function capture(root: Element): Promise<CaptureDocument> {
     };
   } finally {
     restoreReveal();
+    restoreFreeze();
     skipInWalk.clear();
     scrollTo(prevX, prevY);
   }
@@ -84,6 +91,22 @@ export async function capture(root: Element): Promise<CaptureDocument> {
  * TOTALMENTE escondidos a visíveis — sem tocar opacity parcial (ex.: 0.8) nem
  * `transform` (preserva rotação). Devolve uma função que restaura o original.
  */
+/**
+ * Congela transitions/animations: injeta um stylesheet que zera transitions e
+ * deixa animations quase instantâneas, para que animações de entrada
+ * (translate/scale ao revelar) saltem ao estado final em vez de serem
+ * capturadas no meio. Devolve uma função que remove o stylesheet.
+ */
+function freezeAnimations(): () => void {
+  const style = document.createElement("style");
+  style.setAttribute("data-h2f-freeze", "");
+  style.textContent =
+    "*,*::before,*::after{transition:none!important;" +
+    "animation-duration:1ms!important;animation-delay:0s!important;}";
+  (document.head || document.documentElement).appendChild(style);
+  return () => style.remove();
+}
+
 /** Aplica `prop:val !important` inline guardando como desfazer. */
 function forceStyle(el: HTMLElement, prop: string, val: string, undo: (() => void)[]) {
   const prev = el.style.getPropertyValue(prop);
