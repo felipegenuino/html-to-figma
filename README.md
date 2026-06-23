@@ -49,11 +49,12 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
 ## Já resolvido (v0.15)
 
-- **Scroll-reveal**: conteúdo escondido por animações de revelação
-  (`opacity:0`/`visibility:hidden`/`content-visibility:auto` até entrar na
-  viewport) é forçado visível antes da captura — sem corromper opacity parcial
-  (ex.: 0.8) nem rotação, e restaurando o original ao final. Resolve seções
-  vazias em sites com `.reveal`/AOS/etc.
+- **Scroll-reveal**: a captura rola até o **footer** (com esperas, em 2 passadas)
+  pra disparar lazy-load, IntersectionObservers e componentes montados sob
+  demanda; aí força visível o que está escondido por animação de revelação
+  (`opacity:0`/`visibility:hidden`/`content-visibility:auto`) — sem corromper
+  opacity parcial (ex.: 0.8) nem rotação — e só então volta ao topo (fixed/sticky
+  corretos) e captura. Resolve seções vazias em sites com `.reveal`/AOS/etc.
 
 ## Já resolvido (v0.14)
 

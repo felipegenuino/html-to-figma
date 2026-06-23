@@ -27,8 +27,15 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // Normaliza o scroll: elementos fixed/sticky ficam nas coordenadas certas
   const prevX = scrollX;
   const prevY = scrollY;
+  // 1) rola até o footer disparando lazy-load, IntersectionObservers e mounts
+  //    (conteúdo que só monta quando entra na viewport);
+  // 2) com tudo montado/revelado no fim da página, força visível (inline
+  //    !important persiste ao voltar ao topo);
+  // 3) volta ao topo para fixed/sticky ficarem nas coordenadas certas.
   await preloadLazyContent();
   const restoreReveal = forceRevealHidden();
+  scrollTo(0, 0);
+  await nextFrame();
   await nextFrame();
   try {
     const node = await walkElement(root);
@@ -98,22 +105,29 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Rola a página inteira antes de capturar para disparar IntersectionObservers
- * (imagens lazy, secoes animadas) e volta ao topo.
+ * Rola a página inteira até o footer para disparar IntersectionObservers
+ * (imagens lazy, seções com scroll-reveal, componentes montados sob demanda).
+ * Espera em cada passo para animações/mounts completarem e assenta no rodapé.
+ * NÃO volta ao topo — o chamador faz isso após forçar o conteúdo visível.
  */
 async function preloadLazyContent(): Promise<void> {
-  const step = Math.max(innerHeight, 200);
-  const maxY = Math.min(
-    document.documentElement.scrollHeight,
-    step * 40 // limite para paginas "infinitas"
-  );
-  for (let y = 0; y <= maxY; y += step) {
-    scrollTo(0, y);
-    await sleep(80);
+  const step = Math.max(Math.round(innerHeight * 0.8), 200);
+  for (let pass = 0; pass < 2; pass++) {
+    let y = 0;
+    // scrollHeight pode crescer conforme conteúdo é montado — recalcula no loop.
+    for (let guard = 0; guard < 80; guard++) {
+      const maxY = document.documentElement.scrollHeight - innerHeight;
+      if (y >= maxY) break;
+      y = Math.min(y + step, maxY);
+      scrollTo(0, y);
+      await sleep(140);
+      await nextFrame();
+    }
+    // assenta no rodapé para reveals/mounts da última dobra completarem
+    scrollTo(0, document.documentElement.scrollHeight);
+    await sleep(450);
+    await nextFrame();
   }
-  scrollTo(0, 0);
-  await sleep(350); // tempo para lazy assets resolverem src
-  await nextFrame();
 }
 
 function emptyRoot(): ElementNode {
