@@ -40,14 +40,13 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // Overlays interativos detectados no footer (já montados/revelados).
   const overlayRoots = findOverlayRoots();
   overlayRoots.forEach((o) => skipInWalk.add(o));
-  // Volta ao topo e ASSENTA antes de revelar: dá tempo do parallax/JS estabilizar
-  // e dos últimos itens de cada seção montarem (evita "últimas fileiras" sumindo).
+  // Volta ao topo e revela/captura RÁPIDO: conteúdo que desmonta ao sair da
+  // viewport (virtualização) precisa ser pego antes do desmonte. Esperar demais
+  // aqui faz o React remover seções do meio (ex.: passos do processo). O freeze
+  // já evita animações no meio; um respiro curto basta para o layout assentar.
   scrollTo(0, 0);
-  await nextFrame();
-  await sleep(400);
-  await nextFrame();
-  // Revela DEPOIS de assentar, para pegar conteúdo que montou tarde.
   const restoreReveal = forceRevealHidden(overlayRoots);
+  await nextFrame();
   await nextFrame();
   try {
     const node = await walkElement(root);
