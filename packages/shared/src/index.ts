@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 13 as const;
+export const SCHEMA_VERSION = 14 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -28,6 +28,12 @@ export interface CaptureDocument {
     devicePixelRatio: number;
   };
   root: CapturedNode;
+  /**
+   * Overlays interativos (menu hambúrguer, modais, drawers) capturados como
+   * estados "click" separados — escondidos na versão estática (root), revelados
+   * aqui. O plugin desenha cada um como um frame ao lado.
+   */
+  overlays: CapturedNode[];
 }
 
 export type CapturedNode =

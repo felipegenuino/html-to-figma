@@ -33,12 +33,29 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   //    !important persiste ao voltar ao topo);
   // 3) volta ao topo para fixed/sticky ficarem nas coordenadas certas.
   await preloadLazyContent();
-  const restoreReveal = forceRevealHidden();
+  // Overlays interativos (menu/modal/drawer) viram estados "click" à parte:
+  // ficam escondidos na versão estática e são capturados separadamente.
+  const overlayRoots = findOverlayRoots();
+  overlayRoots.forEach((o) => skipInWalk.add(o));
+  const restoreReveal = forceRevealHidden(overlayRoots);
   scrollTo(0, 0);
   await nextFrame();
   await nextFrame();
   try {
     const node = await walkElement(root);
+
+    // Estado "click": cada overlay revelado e capturado como nó separado.
+    const overlays: CapturedNode[] = [];
+    for (const ov of overlayRoots) {
+      skipInWalk.delete(ov);
+      const undo = forceOverlayVisible(ov);
+      await nextFrame();
+      const onode = await walkElement(ov);
+      undo();
+      skipInWalk.add(ov);
+      if (onode) overlays.push(onode);
+    }
+
     return {
       marker: CLIPBOARD_MARKER,
       version: SCHEMA_VERSION,
@@ -50,9 +67,11 @@ export async function capture(root: Element): Promise<CaptureDocument> {
         devicePixelRatio: devicePixelRatio,
       },
       root: node ?? emptyRoot(),
+      overlays,
     };
   } finally {
     restoreReveal();
+    skipInWalk.clear();
     scrollTo(prevX, prevY);
   }
 }
@@ -64,25 +83,74 @@ export async function capture(root: Element): Promise<CaptureDocument> {
  * TOTALMENTE escondidos a visíveis — sem tocar opacity parcial (ex.: 0.8) nem
  * `transform` (preserva rotação). Devolve uma função que restaura o original.
  */
-function forceRevealHidden(): () => void {
+/** Aplica `prop:val !important` inline guardando como desfazer. */
+function forceStyle(el: HTMLElement, prop: string, val: string, undo: (() => void)[]) {
+  const prev = el.style.getPropertyValue(prop);
+  const prevPriority = el.style.getPropertyPriority(prop);
+  el.style.setProperty(prop, val, "important");
+  undo.push(() =>
+    prev ? el.style.setProperty(prop, prev, prevPriority) : el.style.removeProperty(prop)
+  );
+}
+
+function forceRevealHidden(exclude: Element[] = []): () => void {
   const undo: (() => void)[] = [];
-  const force = (el: HTMLElement, prop: string, val: string) => {
-    const prev = el.style.getPropertyValue(prop);
-    const prevPriority = el.style.getPropertyPriority(prop);
-    el.style.setProperty(prop, val, "important");
-    undo.push(() =>
-      prev
-        ? el.style.setProperty(prop, prev, prevPriority)
-        : el.style.removeProperty(prop)
-    );
-  };
+  const isExcluded = (el: Element) => exclude.some((o) => o === el || o.contains(el));
   for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
     if (el.tagName === "SCRIPT" || el.tagName === "STYLE") continue;
+    if (isExcluded(el)) continue; // overlays interativos ficam para o estado "click"
     const cs = getComputedStyle(el);
-    if (parseFloat(cs.opacity) === 0) force(el, "opacity", "1");
-    if (cs.visibility === "hidden") force(el, "visibility", "visible");
+    if (parseFloat(cs.opacity) === 0) forceStyle(el, "opacity", "1", undo);
+    if (cs.visibility === "hidden") forceStyle(el, "visibility", "visible", undo);
     if (cs.getPropertyValue("content-visibility") === "auto")
-      force(el, "content-visibility", "visible");
+      forceStyle(el, "content-visibility", "visible", undo);
+  }
+  return () => undo.forEach((f) => f());
+}
+
+/**
+ * Detecta overlays interativos escondidos (menu/modal/drawer): elementos
+ * ocultos que são `fixed`/`absolute` cobrindo área grande, ou casam seletores
+ * típicos. Retorna só os de topo (não aninhados em outro overlay).
+ */
+function findOverlayRoots(): HTMLElement[] {
+  const SELECTOR =
+    '[role="dialog"],[aria-modal="true"],[class*="overlay" i],[class*="modal" i],[class*="drawer" i],[class*="menu" i]';
+  const candidates: HTMLElement[] = [];
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+    if (SKIP_TAGS.has(el.tagName)) continue;
+    const cs = getComputedStyle(el);
+    const hidden =
+      parseFloat(cs.opacity) === 0 || cs.visibility === "hidden" || cs.display === "none";
+    if (!hidden) continue;
+    const r = el.getBoundingClientRect();
+    const bigCover =
+      (cs.position === "fixed" || cs.position === "absolute") &&
+      r.width >= innerWidth * 0.5 &&
+      r.height >= innerHeight * 0.5;
+    let matchesSel = false;
+    try {
+      matchesSel = el.matches(SELECTOR);
+    } catch {
+      /* seletor 'i' não suportado — ignora */
+    }
+    if (bigCover || matchesSel) candidates.push(el);
+  }
+  return candidates.filter((el) => !candidates.some((o) => o !== el && o.contains(el)));
+}
+
+/** Força um overlay (e subárvore) visível para capturar o estado aberto. */
+function forceOverlayVisible(root: HTMLElement): () => void {
+  const undo: (() => void)[] = [];
+  const rcs = getComputedStyle(root);
+  forceStyle(root, "opacity", "1", undo);
+  forceStyle(root, "visibility", "visible", undo);
+  if (rcs.display === "none") forceStyle(root, "display", "block", undo);
+  if (rcs.transform !== "none") forceStyle(root, "transform", "none", undo);
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    const cs = getComputedStyle(el);
+    if (parseFloat(cs.opacity) === 0) forceStyle(el, "opacity", "1", undo);
+    if (cs.visibility === "hidden") forceStyle(el, "visibility", "visible", undo);
   }
   return () => undo.forEach((f) => f());
 }
@@ -362,8 +430,12 @@ function flexLayout(
 
 // ------------------------------------------------------------------- walker
 
+/** Elementos a pular no walk atual (overlays capturados à parte). */
+const skipInWalk = new Set<Element>();
+
 async function walkElement(el: Element): Promise<CapturedNode | null> {
   if (SKIP_TAGS.has(el.tagName)) return null;
+  if (skipInWalk.has(el)) return null;
 
   const cs = getComputedStyle(el);
   const r = el.getBoundingClientRect();

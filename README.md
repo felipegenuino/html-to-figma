@@ -47,6 +47,14 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.16)
+
+- **Estados "click" (menu/modal/drawer)**: overlays interativos escondidos
+  (heurística: ocultos + `fixed/absolute` cobrindo área grande, ou seletores
+  `[role=dialog]`/`[aria-modal]`/`.overlay`/`.menu`/`.modal`/`.drawer`) saem da
+  versão **estática** (que fica limpa) e são capturados como **frames separados**
+  ao lado — a versão estática e a versão aberta, lado a lado.
+
 ## Já resolvido (v0.15)
 
 - **Scroll-reveal**: a captura rola até o **footer** (com esperas, em 2 passadas)

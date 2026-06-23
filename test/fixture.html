@@ -60,6 +60,10 @@
   .grid-exp > .cx { background: #af8; }
   .grid-exp > .cy { background: #f8a; }
 
+  /* 21. Overlay interativo escondido (menu) → vira frame "click" separado */
+  .menu-overlay { position: fixed; inset: 0; width: 100%; height: 100%; opacity: 0; visibility: hidden; background: rgb(17, 17, 17); }
+  .menu-overlay .menu-link { color: rgb(255, 255, 255); font-size: 24px; }
+
   /* 20. Conteúdo escondido por scroll-reveal (opacity:0 + visibility:hidden) */
   .reveal-test { opacity: 0; visibility: hidden; font-size: 16px; color: rgb(10, 20, 30); }
 
@@ -139,5 +143,6 @@
   <section class="grad-text">degrade</section>
   <img class="img-styled" alt="" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMzY2Ii8+PC9zdmc+">
   <section class="reveal-test">revelado</section>
+  <div class="menu-overlay"><a class="menu-link">Menu Aberto</a></div>
 </body>
 </html>

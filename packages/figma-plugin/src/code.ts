@@ -20,12 +20,28 @@ figma.ui.onmessage = async (msg: { type: string; json?: string }) => {
     if (!isCaptureDocument(doc)) {
       throw new Error("JSON inválido — capture novamente com a extensão.");
     }
-    const frame = await buildRoot(doc.root, doc.source.title || doc.source.url);
+    const baseName = doc.source.title || doc.source.url;
+    const frame = await buildRoot(doc.root, baseName);
     figma.currentPage.appendChild(frame);
-    figma.viewport.scrollAndZoomIntoView([frame]);
-    figma.currentPage.selection = [frame];
-    figma.ui.postMessage({ text: "✓ Importado!" });
-    figma.notify("Página importada");
+    const made: FrameNode[] = [frame];
+
+    // Estados "click" (menu/modal/drawer) como frames separados, à direita.
+    const overlays: CapturedNode[] = doc.overlays ?? [];
+    let nextX = frame.x + frame.width + 80;
+    for (let i = 0; i < overlays.length; i++) {
+      const ov = await buildRoot(overlays[i], `▸ overlay ${i + 1} · ${baseName}`);
+      figma.currentPage.appendChild(ov);
+      ov.x = nextX;
+      ov.y = frame.y;
+      nextX += ov.width + 80;
+      made.push(ov);
+    }
+
+    figma.viewport.scrollAndZoomIntoView(made);
+    figma.currentPage.selection = made;
+    const extra = overlays.length ? ` (+${overlays.length} overlay)` : "";
+    figma.ui.postMessage({ text: `✓ Importado!${extra}` });
+    figma.notify(`Página importada${extra}`);
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e);
     figma.ui.postMessage({ text, error: true });

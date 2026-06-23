@@ -231,6 +231,12 @@ if (imgStyled) {
   check("force-reveal: opacity parcial preservada (0.8)", imgStyled.opacity === 0.8);
 }
 
+// --- overlay interativo vira frame "click" separado, fora da estática ---
+check("overlay: menu NÃO está na versão estática", !findByName(root, "menu-overlay"));
+check("overlay: doc.overlays existe", Array.isArray(doc.overlays));
+const menuOverlay = (doc.overlays ?? []).map((o) => findByName(o, "Menu Aberto")).find(Boolean);
+check("overlay: menu capturado como overlay separado", !!menuOverlay);
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);
