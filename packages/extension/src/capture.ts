@@ -617,8 +617,10 @@ async function buildWalkedNode(
   if (textLines > 1) layout = null;
 
   // Grid: deriva a célula (start + span) de cada filho pela geometria real.
+  // `pr`, não `r`: os rects dos filhos estão em coordenadas de página, e a
+  // origem do grid precisa estar no mesmo sistema (DOMRect passaria no tipo).
   if (layout && layout.mode === "grid") {
-    computeGridAreas(layout, r, cs, entries.map((e) => e.node));
+    computeGridAreas(layout, pr, cs, entries.map((e) => e.node));
   }
 
   const styles = await elementStyles(el, cs);

@@ -247,6 +247,26 @@ check("scroll-following: conteúdo virtualizado capturado", !!virt);
 check(`root em x=0 (x=${root.rect.x})`, Math.abs(root.rect.x) <= 1);
 check(`root em y=0 (y=${root.rect.y})`, Math.abs(root.rect.y) <= 1);
 
+// --- grid explícito fim de página: gridArea correto mesmo com a página rolada ---
+const gsGrid = findByName(root, "section.grid-scrolled");
+check("grid-scrolled: grid encontrado", !!gsGrid && gsGrid.styles?.layout?.mode === "grid");
+if (gsGrid) {
+  const area = (cls) => findByName(gsGrid, cls)?.gridArea;
+  const cases = [
+    ["gs-a", { columnStart: 0, columnSpan: 4, rowStart: 0, rowSpan: 1 }],
+    ["gs-b", { columnStart: 4, columnSpan: 8, rowStart: 0, rowSpan: 1 }],
+    ["gs-c", { columnStart: 0, columnSpan: 6, rowStart: 1, rowSpan: 1 }],
+    ["gs-d", { columnStart: 6, columnSpan: 6, rowStart: 1, rowSpan: 1 }],
+  ];
+  for (const [cls, want] of cases) {
+    const got = area(cls);
+    check(
+      `grid-scrolled ${cls}: gridArea ${JSON.stringify(want)} (got ${JSON.stringify(got)})`,
+      !!got && Object.entries(want).every(([k, v]) => got[k] === v)
+    );
+  }
+}
+
 // --- sticky durante scroll-following: capturado na posição natural, não grudado ---
 const stickySection = findByName(root, "section.sticky-test");
 const stickyHead = findByName(root, "div.sticky-head");

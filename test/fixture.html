@@ -149,6 +149,16 @@
   <!-- 22. Virtualização: conteúdo que desmonta ao sair da viewport (testa scroll-following) -->
   <div style="height: 1600px"></div>
   <section class="virt-test"><span class="virt-content">Virtualizado Visivel</span></section>
+  <!-- 24. Grid explícito FIM DE PÁGINA: computeGridAreas precisa comparar origem e
+       filhos no MESMO sistema de coordenadas (página), senão rowStart sai errado
+       quando o walker chega aqui já rolado. -->
+  <section class="grid-scrolled" style="display: grid; grid-template-columns: repeat(12, 1fr); grid-template-rows: 100px 100px; gap: 16px; background: #dde;">
+    <div class="gs-a" style="grid-column: 1 / span 4; grid-row: 1; background: #fbb;">A</div>
+    <div class="gs-b" style="grid-column: 5 / span 8; grid-row: 1; background: #bfb;">B</div>
+    <div class="gs-c" style="grid-column: 1 / span 6; grid-row: 2; background: #bbf;">C</div>
+    <div class="gs-d" style="grid-column: 7 / span 6; grid-row: 2; background: #ffb;">D</div>
+  </section>
+
   <!-- 23. Sticky durante scroll-following: medido grudado deve sair na posição natural.
        O espaçador deixa a section off-screen; o walker a rola para o centro
        (section > viewport ⇒ topo acima da viewport ⇒ sticky gruda antes de ser medido). -->
