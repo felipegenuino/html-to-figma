@@ -2,7 +2,8 @@
  * Reproduz a captura real em Chrome headless via DevTools Protocol:
  * builda o capture (esbuild, em memória), carrega fixture.html, injeta o
  * bundle e devolve o JSON da captura no stdout.
- * Uso: node test/run_capture.mjs > test/out.json
+ * Uso: node test/run_capture.mjs [url] > test/out.json
+ * (sem argumento usa test/fixture.html; com URL faz smoke test em página real)
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -12,7 +13,7 @@ import * as esbuild from "esbuild";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9222;
-const fixtureUrl = pathToFileURL(join(__dirname, "fixture.html")).href;
+const fixtureUrl = process.argv[2] ?? pathToFileURL(join(__dirname, "fixture.html")).href;
 
 // Reconstrói o bundle de captura a cada execução (sem artefato commitado).
 const built = await esbuild.build({

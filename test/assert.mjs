@@ -154,6 +154,129 @@ if (cy) {
   check("grid-exp: .cy auto → (row1,col1)", a?.rowStart === 1 && a?.columnStart === 1 && a?.columnSpan === 1);
 }
 
+// --- blur (filter / backdrop-filter) ---
+const blurred = findByName(root, "blurred");
+check("blurred: nó encontrado", !!blurred);
+if (blurred) {
+  check("blurred: layerBlur === 4", blurred.styles?.layerBlur === 4);
+  check("blurred: backgroundBlur 0", blurred.styles?.backgroundBlur === 0);
+}
+const glass = findByName(root, "glass");
+check("glass: nó encontrado", !!glass);
+if (glass) {
+  check("glass: backgroundBlur === 8", glass.styles?.backgroundBlur === 8);
+}
+
+// --- background-size: cover/contain → FILL/FIT ---
+const bgContain = findByName(root, "bg-contain");
+check("bg-contain: nó encontrado", !!bgContain);
+if (bgContain) {
+  const l = bgContain.styles?.backgroundLayers?.[0];
+  check("bg-contain: camada imagem", l?.kind === "image");
+  check("bg-contain: scaleMode FIT", l?.scaleMode === "FIT");
+}
+const bgCover = findByName(root, "section.bg");
+if (bgCover) {
+  const l = bgCover.styles?.backgroundLayers?.[0];
+  check("bg (cover): scaleMode FILL", l?.kind === "image" && l?.scaleMode === "FILL");
+}
+
+// --- mix-blend-mode ---
+const blend = findByName(root, "section.blend");
+check("blend: nó encontrado", !!blend);
+if (blend) {
+  check("blend: blendMode multiply", blend.styles?.blendMode === "multiply");
+}
+
+// --- text-shadow ---
+const tshadow = findByName(root, "sombra");
+check("text-shadow: nó de texto encontrado", !!tshadow);
+if (tshadow) {
+  const sh = tshadow.styles?.textShadow?.[0];
+  check("text-shadow: 1 sombra", tshadow.styles?.textShadow?.length === 1);
+  check("text-shadow: offsetX 2", sh?.offsetX === 2);
+  check("text-shadow: offsetY 3", sh?.offsetY === 3);
+  check("text-shadow: blur 4", sh?.blur === 4);
+}
+
+// --- texto com gradiente (background-clip: text) ---
+const gradTextSection = findByName(root, "section.grad-text");
+check("grad-text: seção encontrada", !!gradTextSection);
+if (gradTextSection) {
+  check("grad-text: bg do elemento limpo", (gradTextSection.styles?.backgroundLayers?.length ?? 0) === 0);
+}
+const gradText = findByName(root, "degrade");
+check("grad-text: nó de texto encontrado", !!gradText);
+if (gradText) {
+  check("grad-text: texto tem gradiente", gradText.styles?.gradient?.type === "linear");
+  check("grad-text: gradiente >= 2 stops", (gradText.styles?.gradient?.stops?.length ?? 0) >= 2);
+}
+
+// --- <img> com border/shadow/opacity ---
+const imgStyled = findByName(root, "img-styled");
+check("img-styled: nó encontrado", !!imgStyled);
+if (imgStyled) {
+  check("img-styled: é image", imgStyled.type === "image");
+  check("img-styled: opacity 0.8", imgStyled.opacity === 0.8);
+  check("img-styled: border 2px", imgStyled.borders?.top?.width === 2);
+  check("img-styled: 1 box-shadow", imgStyled.boxShadow?.length === 1);
+  check("img-styled: shadow blur 8", imgStyled.boxShadow?.[0]?.blur === 8);
+}
+
+// --- conteúdo escondido por scroll-reveal deve ser forçado visível ---
+const revealed = findByName(root, "revelado");
+check("force-reveal: texto escondido foi capturado", !!revealed);
+// e a opacity parcial legítima (img 0.8) NÃO pode ser corrompida
+if (imgStyled) {
+  check("force-reveal: opacity parcial preservada (0.8)", imgStyled.opacity === 0.8);
+}
+
+// --- overlay interativo vira frame "click" separado, fora da estática ---
+check("overlay: menu NÃO está na versão estática", !findByName(root, "menu-overlay"));
+check("overlay: doc.overlays existe", Array.isArray(doc.overlays));
+const menuOverlay = (doc.overlays ?? []).map((o) => findByName(o, "Menu Aberto")).find(Boolean);
+check("overlay: menu capturado como overlay separado", !!menuOverlay);
+
+// --- scroll-following: conteúdo virtualizado (desmonta off-screen) é capturado ---
+const virt = findByName(root, "Virtualizado Visivel");
+check("scroll-following: conteúdo virtualizado capturado", !!virt);
+
+// --- containers: rect em coordenadas de página do MOMENTO DA MEDIÇÃO ---
+// (o scroll-following desce a página durante o walk dos filhos; o rect do
+// container não pode somar o scroll de depois — o body deve sair em y=0)
+check(`root em x=0 (x=${root.rect.x})`, Math.abs(root.rect.x) <= 1);
+check(`root em y=0 (y=${root.rect.y})`, Math.abs(root.rect.y) <= 1);
+
+// --- grid explícito fim de página: gridArea correto mesmo com a página rolada ---
+const gsGrid = findByName(root, "section.grid-scrolled");
+check("grid-scrolled: grid encontrado", !!gsGrid && gsGrid.styles?.layout?.mode === "grid");
+if (gsGrid) {
+  const area = (cls) => findByName(gsGrid, cls)?.gridArea;
+  const cases = [
+    ["gs-a", { columnStart: 0, columnSpan: 4, rowStart: 0, rowSpan: 1 }],
+    ["gs-b", { columnStart: 4, columnSpan: 8, rowStart: 0, rowSpan: 1 }],
+    ["gs-c", { columnStart: 0, columnSpan: 6, rowStart: 1, rowSpan: 1 }],
+    ["gs-d", { columnStart: 6, columnSpan: 6, rowStart: 1, rowSpan: 1 }],
+  ];
+  for (const [cls, want] of cases) {
+    const got = area(cls);
+    check(
+      `grid-scrolled ${cls}: gridArea ${JSON.stringify(want)} (got ${JSON.stringify(got)})`,
+      !!got && Object.entries(want).every(([k, v]) => got[k] === v)
+    );
+  }
+}
+
+// --- sticky durante scroll-following: capturado na posição natural, não grudado ---
+const stickySection = findByName(root, "section.sticky-test");
+const stickyHead = findByName(root, "div.sticky-head");
+check("sticky: section encontrada", !!stickySection);
+check("sticky: header encontrado", !!stickyHead);
+if (stickySection && stickyHead) {
+  const dy = Math.abs(stickyHead.rect.y - stickySection.rect.y);
+  check(`sticky: y natural = topo da section (delta ${dy}px)`, dy <= 1);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

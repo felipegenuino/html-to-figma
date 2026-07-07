@@ -8,7 +8,7 @@
  * - Unidades já resolvidas em px.
  */
 
-export const SCHEMA_VERSION = 7 as const;
+export const SCHEMA_VERSION = 14 as const;
 
 /** Marcador para o plugin validar que o clipboard contém uma captura nossa. */
 export const CLIPBOARD_MARKER = "h2f-capture" as const;
@@ -28,6 +28,12 @@ export interface CaptureDocument {
     devicePixelRatio: number;
   };
   root: CapturedNode;
+  /**
+   * Overlays interativos (menu hambúrguer, modais, drawers) capturados como
+   * estados "click" separados — escondidos na versão estática (root), revelados
+   * aqui. O plugin desenha cada um como um frame ao lado.
+   */
+  overlays: CapturedNode[];
 }
 
 export type CapturedNode =
@@ -88,6 +94,9 @@ export interface ImageNode extends BaseNode {
   src: string;
   objectFit: "fill" | "contain" | "cover" | "none" | "scale-down";
   borderRadius: BorderRadius;
+  borders: Borders | null;
+  boxShadow: Shadow[];
+  opacity: number;
 }
 
 /** SVG inline → importado via createNodeFromSvg. */
@@ -133,6 +142,12 @@ export interface ElementStyles {
   borders: Borders | null;
   borderRadius: BorderRadius;
   boxShadow: Shadow[];
+  /** filter: blur(px) → LAYER_BLUR no Figma. 0 = nenhum. */
+  layerBlur: number;
+  /** backdrop-filter: blur(px) → BACKGROUND_BLUR no Figma. 0 = nenhum. */
+  backgroundBlur: number;
+  /** mix-blend-mode (valor CSS, ex.: "multiply"); null = normal (não altera). */
+  blendMode: string | null;
   opacity: number;
   overflowHidden: boolean;
   layout: AutoLayout | null;
@@ -152,9 +167,13 @@ export interface TextStyles {
   lineHeight: number | null; // px, null = auto
   letterSpacing: number; // px
   color: string; // rgba()
+  /** background-clip:text → gradiente aplicado como fill do texto (senão null). */
+  gradient: Gradient | null;
   textAlign: "left" | "center" | "right" | "justify";
   textDecoration: "none" | "underline" | "line-through";
   textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
+  /** text-shadow → DROP_SHADOW no TextNode (spread/inset sempre 0/false). */
+  textShadow: Shadow[];
 }
 
 /** Uma borda de um lado. */
@@ -190,7 +209,7 @@ export interface Shadow {
 
 /** Uma camada de background-image: imagem (data URL) ou gradiente. */
 export type BackgroundLayer =
-  | { kind: "image"; src: string }
+  | { kind: "image"; src: string; scaleMode: "FILL" | "FIT" }
   | { kind: "gradient"; gradient: Gradient };
 
 export interface Gradient {

@@ -20,12 +20,28 @@ figma.ui.onmessage = async (msg: { type: string; json?: string }) => {
     if (!isCaptureDocument(doc)) {
       throw new Error("JSON inválido — capture novamente com a extensão.");
     }
-    const frame = await buildRoot(doc.root, doc.source.title || doc.source.url);
+    const baseName = doc.source.title || doc.source.url;
+    const frame = await buildRoot(doc.root, baseName);
     figma.currentPage.appendChild(frame);
-    figma.viewport.scrollAndZoomIntoView([frame]);
-    figma.currentPage.selection = [frame];
-    figma.ui.postMessage({ text: "✓ Importado!" });
-    figma.notify("Página importada");
+    const made: FrameNode[] = [frame];
+
+    // Estados "click" (menu/modal/drawer) como frames separados, à direita.
+    const overlays: CapturedNode[] = doc.overlays ?? [];
+    let nextX = frame.x + frame.width + 80;
+    for (let i = 0; i < overlays.length; i++) {
+      const ov = await buildRoot(overlays[i], `▸ overlay ${i + 1} · ${baseName}`);
+      figma.currentPage.appendChild(ov);
+      ov.x = nextX;
+      ov.y = frame.y;
+      nextX += ov.width + 80;
+      made.push(ov);
+    }
+
+    figma.viewport.scrollAndZoomIntoView(made);
+    figma.currentPage.selection = made;
+    const extra = overlays.length ? ` (+${overlays.length} overlay)` : "";
+    figma.ui.postMessage({ text: `✓ Importado!${extra}` });
+    figma.notify(`Página importada${extra}`);
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e);
     figma.ui.postMessage({ text, error: true });
@@ -95,7 +111,7 @@ async function buildElement(
       if (g) fills.push(g);
     } else if (layer.src.startsWith("data:")) {
       const img = imageFromDataUrl(layer.src);
-      if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: "FILL" });
+      if (img) fills.push({ type: "IMAGE", imageHash: img.hash, scaleMode: layer.scaleMode });
     }
   }
   f.fills = fills;
@@ -107,7 +123,7 @@ async function buildElement(
   f.bottomRightRadius = s.borderRadius.bottomRight;
   f.bottomLeftRadius = s.borderRadius.bottomLeft;
 
-  f.effects = s.boxShadow.flatMap((sh): Effect[] => {
+  const shadowEffects = s.boxShadow.flatMap((sh): Effect[] => {
     const c = parseRgba(sh.color);
     if (!c) return [];
     return [{
@@ -120,8 +136,18 @@ async function buildElement(
       blendMode: "NORMAL",
     }];
   });
+  // O radius de blur do Figma é ~2× o valor px do CSS (radius ≈ 2× stdDeviation
+  // gaussiano); sem o fator o blur sai pela metade.
+  const blurEffects: Effect[] = [];
+  if (s.layerBlur > 0)
+    blurEffects.push({ type: "LAYER_BLUR", radius: s.layerBlur * 2, visible: true, blurType: "NORMAL" });
+  if (s.backgroundBlur > 0)
+    blurEffects.push({ type: "BACKGROUND_BLUR", radius: s.backgroundBlur * 2, visible: true, blurType: "NORMAL" });
+  f.effects = [...shadowEffects, ...blurEffects];
 
   f.opacity = s.opacity;
+  const blend = cssToBlendMode(s.blendMode);
+  if (blend) f.blendMode = blend;
   f.clipsContent = s.overflowHidden;
 
   if (s.layout) applyLayout(f, s.layout, n.rect);
@@ -228,22 +254,58 @@ function applyGridPlacement(f: FrameNode, columns: number, children: GridChild[]
   );
   if (trivial) return;
 
+  // O placement vem da geometria; se duas células coincidem (ex.: rowSizes
+  // incompleto em grids de linhas auto, jogando vários itens em row 0), o Figma
+  // não consegue posicionar (uma célula = um nó). Mapeamento ambíguo → cai pro
+  // auto-flow em vez de crashar.
+  const cells = new Set(children.map((c) => `${c.area.rowStart},${c.area.columnStart}`));
+  if (cells.size < children.length) return;
+
   let maxCol = 0;
   let maxRow = 0;
   for (const { area } of children) {
     maxCol = Math.max(maxCol, area.columnStart + area.columnSpan);
     maxRow = Math.max(maxRow, area.rowStart + area.rowSpan);
   }
-  f.gridColumnCount = Math.max(f.gridColumnCount, maxCol);
-  f.gridRowCount = Math.max(f.gridRowCount, maxRow);
   f.gridItemsPositioning = "MANUAL";
 
-  for (const { node, area } of children) {
-    if (!("setGridChildPosition" in node)) continue;
-    const gc = node as unknown as GridPositionable;
-    gc.gridColumnSpan = area.columnSpan;
-    gc.gridRowSpan = area.rowSpan;
-    gc.setGridChildPosition(area.rowStart, area.columnStart);
+  // O Figma rejeita posicionar/expandir um filho sobre células ocupadas, e mover
+  // um-a-um tem ciclos de colisão (A quer a célula de B e vice-versa). Quebramos
+  // os ciclos estacionando todos numa linha de rascunho vazia (grade expandida),
+  // depois movemos cada um para a célula final (área real já vazia) e por fim
+  // crescemos os spans; no fim removemos o espaço de rascunho.
+  // Contagens reais da grade (preserva colunas/linhas vazias além do maior span).
+  const baseCols = Math.max(f.gridColumnCount, maxCol);
+  const baseRows = Math.max(f.gridRowCount, maxRow);
+
+  const placeable = children.filter((c) => "setGridChildPosition" in c.node);
+  const parkRow = baseRows; // linha nova, além das reais
+  f.gridColumnCount = Math.max(baseCols, placeable.length, 1);
+  f.gridRowCount = baseRows + 1;
+
+  try {
+    placeable.forEach(({ node }, i) => {
+      const gc = node as unknown as GridPositionable;
+      gc.gridColumnSpan = 1;
+      gc.gridRowSpan = 1;
+      gc.setGridChildPosition(parkRow, i);
+    });
+    for (const { node, area } of placeable) {
+      (node as unknown as GridPositionable).setGridChildPosition(area.rowStart, area.columnStart);
+    }
+    for (const { node, area } of placeable) {
+      const gc = node as unknown as GridPositionable;
+      gc.gridColumnSpan = area.columnSpan;
+      gc.gridRowSpan = area.rowSpan;
+    }
+    f.gridColumnCount = baseCols;
+    f.gridRowCount = baseRows;
+  } catch (e) {
+    // Colisão imprevista (ex.: spans sobrepostos) — degrada pro auto-flow do
+    // Figma em vez de abortar o import inteiro.
+    f.gridColumnCount = baseCols;
+    f.gridRowCount = baseRows;
+    f.gridItemsPositioning = "ROW_AUTO_FLOW";
   }
 }
 
@@ -329,8 +391,28 @@ async function buildText(
   t.characters = n.content;
   t.fontSize = s.fontSize;
 
-  const c = parseRgba(s.color);
-  if (c) t.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+  // background-clip:text → fill de gradiente; senão cor sólida.
+  const gp = s.gradient ? gradientPaint(s.gradient) : null;
+  if (gp) {
+    t.fills = [gp];
+  } else {
+    const c = parseRgba(s.color);
+    if (c) t.fills = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+  }
+
+  t.effects = s.textShadow.flatMap((sh): Effect[] => {
+    const sc = parseRgba(sh.color);
+    if (!sc) return [];
+    return [{
+      type: "DROP_SHADOW",
+      color: { r: sc.r, g: sc.g, b: sc.b, a: sc.a },
+      offset: { x: sh.offsetX, y: sh.offsetY },
+      radius: sh.blur,
+      spread: 0,
+      visible: true,
+      blendMode: "NORMAL",
+    }];
+  });
 
   if (s.lineHeight) t.lineHeight = { value: s.lineHeight, unit: "PIXELS" };
   t.letterSpacing = { value: s.letterSpacing, unit: "PIXELS" };
@@ -372,7 +454,41 @@ function buildImage(n: ImageNode, offset: { x: number; y: number }): RectangleNo
     r.fills = [{ type: "SOLID", color: { r: 0.85, g: 0.85, b: 0.85 } }];
     r.name = `${n.name} (imagem não capturada)`;
   }
+
+  applyImageBorders(r, n.borders);
+  r.effects = n.boxShadow.flatMap((sh): Effect[] => {
+    const c = parseRgba(sh.color);
+    if (!c) return [];
+    return [{
+      type: sh.inset ? "INNER_SHADOW" : "DROP_SHADOW",
+      color: { r: c.r, g: c.g, b: c.b, a: c.a },
+      offset: { x: sh.offsetX, y: sh.offsetY },
+      radius: sh.blur,
+      spread: sh.spread,
+      visible: true,
+      blendMode: "NORMAL",
+    }];
+  });
+  r.opacity = n.opacity;
   return r;
+}
+
+/** Borda nativa para imagens (RectangleNode): larguras por lado + 1 cor. */
+function applyImageBorders(r: RectangleNode, borders: Borders | null): void {
+  if (!borders) return;
+  const visible = SIDES.map((side) => borders[side]).filter((b): b is SideBorder => b !== null);
+  if (visible.length === 0) return;
+  const c = parseRgba(visible[0].color);
+  if (!c) return;
+  r.strokes = [{ type: "SOLID", color: { r: c.r, g: c.g, b: c.b }, opacity: c.a }];
+  r.strokeAlign = "INSIDE";
+  r.strokeTopWeight = borders.top?.width ?? 0;
+  r.strokeRightWeight = borders.right?.width ?? 0;
+  r.strokeBottomWeight = borders.bottom?.width ?? 0;
+  r.strokeLeftWeight = borders.left?.width ?? 0;
+  const st = visible[0].style;
+  if (st === "dashed") r.dashPattern = [visible[0].width * 3, visible[0].width * 2];
+  if (st === "dotted") r.dashPattern = [visible[0].width, visible[0].width];
 }
 
 function imageFromDataUrl(dataUrl: string): Image | null {
@@ -422,6 +538,21 @@ function buildSvg(n: SvgNode, offset: { x: number; y: number }): SceneNode {
     r.fills = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.9 } }];
     return r;
   }
+}
+
+// -------------------------------------------------------------- blend mode
+
+const BLEND_MODES = new Set<BlendMode>([
+  "NORMAL", "DARKEN", "MULTIPLY", "LINEAR_BURN", "COLOR_BURN", "LIGHTEN",
+  "SCREEN", "LINEAR_DODGE", "COLOR_DODGE", "OVERLAY", "SOFT_LIGHT", "HARD_LIGHT",
+  "DIFFERENCE", "EXCLUSION", "HUE", "SATURATION", "COLOR", "LUMINOSITY",
+]);
+
+/** mix-blend-mode CSS → BlendMode do Figma (ex.: "color-dodge" → COLOR_DODGE). */
+function cssToBlendMode(css: string | null): BlendMode | null {
+  if (!css) return null;
+  const m = css.toUpperCase().replace(/-/g, "_") as BlendMode;
+  return BLEND_MODES.has(m) ? m : null;
 }
 
 // ------------------------------------------------------------------ bordas

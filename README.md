@@ -47,6 +47,55 @@ Com ele no ar, a extensão envia a captura direto pelo WebSocket e o plugin do
 Figma **importa automaticamente** (o indicador "Servidor: conectado" fica verde).
 Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 
+## Já resolvido (v0.16)
+
+- **Estados "click" (menu/modal/drawer)**: overlays interativos escondidos
+  (heurística: ocultos + `fixed/absolute` cobrindo área grande, ou seletores
+  `[role=dialog]`/`[aria-modal]`/`.overlay`/`.menu`/`.modal`/`.drawer`) saem da
+  versão **estática** (que fica limpa) e são capturados como **frames separados**
+  ao lado — a versão estática e a versão aberta, lado a lado.
+
+## Já resolvido (v0.15)
+
+- **Scroll-reveal**: a captura rola até o **footer** (com esperas, em 2 passadas)
+  pra disparar lazy-load, IntersectionObservers e componentes montados sob
+  demanda; aí força visível o que está escondido por animação de revelação
+  (`opacity:0`/`visibility:hidden`/`content-visibility:auto`) — sem corromper
+  opacity parcial (ex.: 0.8) nem rotação — e só então volta ao topo (fixed/sticky
+  corretos) e captura. Resolve seções vazias em sites com `.reveal`/AOS/etc.
+
+## Já resolvido (v0.14)
+
+- **Estilo de `<img>`**: imagens (`<img>`) agora também levam `border`,
+  `box-shadow` e `opacity` — antes só `src`/`object-fit`/`border-radius`.
+
+## Já resolvido (v0.13)
+
+- **Texto com gradiente**: `background-clip: text` (+ gradiente) aplica o gradiente
+  como fill do TextNode e limpa o background do elemento — em vez de texto
+  transparente sobre um retângulo.
+
+## Já resolvido (v0.12)
+
+- **text-shadow**: vira `DROP_SHADOW` no TextNode (offset, blur, cor) — múltiplas
+  sombras suportadas.
+
+## Já resolvido (v0.11)
+
+- **mix-blend-mode**: mapeado para o `blendMode` nativo do Figma (multiply,
+  screen, overlay, etc.). `normal` não altera o nó.
+
+## Já resolvido (v0.10)
+
+- **background-size**: `cover` → `FILL` e `contain` → `FIT` por camada de imagem
+  (antes tudo era `FILL`, esticando `contain`).
+
+## Já resolvido (v0.9)
+
+- **Blur**: `filter: blur()` vira `LAYER_BLUR` e `backdrop-filter: blur()` vira
+  `BACKGROUND_BLUR` (glassmorphism) — efeitos nativos do Figma, sem rasterizar.
+  Antes o `backdrop-filter` era perdido e `filter: blur` virava screenshot.
+
 ## Já resolvido (v0.8)
 
 - **Grid com posicionamento explícito**: a célula de cada item (`grid-column`/
@@ -119,10 +168,26 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
 - `transform`: só rotação (escala/skew/`matrix3d` ignorados); conteúdo aninhado
   de elementos rotacionados pode ficar levemente desalinhado.
 - Screenshot por elemento só funciona se o elemento couber no viewport visível.
+- Só `blur()` vira efeito nativo; outros filtros (`brightness`, `grayscale`,
+  `drop-shadow`…) continuam no fallback de screenshot.
 - `iframes` continuam ignorados; fontes precisam existir no Figma (senão, Inter).
+- `sticky` "grudado" durante o scroll-following pode ficar deslocado (tratado
+  como fluxo normal).
+
+## Já resolvido (v0.17)
+
+- **Scroll-following**: a captura rola cada elemento off-screen para a viewport
+  antes de medir, re-montando conteúdo virtualizado e lendo a geometria no lugar
+  certo; o hero é lido assentado no topo (parallax JS estabilizado). Resolve de
+  uma vez parallax e conteúdo que desmonta off-screen. Coords de `fixed` ficam
+  corretas via supressão do offset de scroll na subárvore fixa.
+- **Sticky durante o scroll**: elemento `sticky` "grudado" na hora da medição é
+  lido na posição natural de fluxo (swap temporário `sticky → relative`, que
+  ocupa o mesmo lugar no layout).
 
 ## Próximos passos
 
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
-- `background-size`/`background-position` por camada (hoje tudo usa `FILL`).
+- `background-position`/`background-repeat` (TILE) e `background-size` em px por
+  camada (hoje só `cover`/`contain`; exigem `imageTransform`/`scalingFactor`).

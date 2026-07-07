@@ -27,9 +27,42 @@ export async function capture(root: Element): Promise<CaptureDocument> {
   // Normaliza o scroll: elementos fixed/sticky ficam nas coordenadas certas
   const prevX = scrollX;
   const prevY = scrollY;
+  // Pipeline:
+  // 0) freeze de transitions/animations (animações de entrada saltam ao final);
+  // 1) rola até o footer (lazy-load, IntersectionObservers, mounts);
+  // 2) detecta overlays interativos (menu/modal) para virarem estados "click";
+  // 3) volta ao topo e ASSENTA (parallax JS do hero estabiliza — o topo fica em
+  //    vista, então não desmonta); revela o escondido;
+  // 4) walkElement faz SCROLL-FOLLOWING: rola cada elemento off-screen à viewport
+  //    antes de medir, re-montando conteúdo virtualizado e lendo a geometria
+  //    no lugar certo. Resolve parallax (hero lido assentado no topo) e
+  //    virtualização (conteúdo re-montado ao ser alcançado) de uma vez.
+  const restoreFreeze = freezeAnimations();
   await preloadLazyContent();
+  const overlayRoots = findOverlayRoots();
+  overlayRoots.forEach((o) => skipInWalk.add(o));
+  scrollTo(0, 0);
+  await nextFrame();
+  await sleep(350); // parallax/JS do hero assenta (topo em vista, sem desmonte)
+  await nextFrame();
+  forceRevealHidden(overlayRoots);
   try {
     const node = await walkElement(root);
+
+    // Estado "click": cada overlay revelado e capturado como nó separado.
+    scrollTo(0, 0); // o scroll-following pode ter descido a página
+    const overlays: CapturedNode[] = [];
+    for (const ov of overlayRoots) {
+      skipInWalk.delete(ov);
+      const undo = forceOverlayVisible(ov);
+      await nextFrame();
+      const onode = await walkElement(ov);
+      undo();
+      skipInWalk.add(ov);
+      // Só inclui overlays com conteúdo real (evita modais/lightboxes vazios).
+      if (onode && hasVisibleContent(onode)) overlays.push(onode);
+    }
+
     return {
       marker: CLIPBOARD_MARKER,
       version: SCHEMA_VERSION,
@@ -41,10 +74,169 @@ export async function capture(root: Element): Promise<CaptureDocument> {
         devicePixelRatio: devicePixelRatio,
       },
       root: node ?? emptyRoot(),
+      overlays,
     };
   } finally {
+    restoreReveals();
+    restoreFreeze();
+    fixedScrollSuppressed = 0;
+    skipInWalk.clear();
     scrollTo(prevX, prevY);
   }
+}
+
+/**
+ * Neutraliza animações de scroll-reveal: muitos sites escondem conteúdo com
+ * `opacity:0`/`visibility:hidden`/`content-visibility:auto` até o elemento entrar
+ * na viewport. Como capturamos num único snapshot, força esses estados
+ * TOTALMENTE escondidos a visíveis — sem tocar opacity parcial (ex.: 0.8) nem
+ * `transform` (preserva rotação). Devolve uma função que restaura o original.
+ */
+/**
+ * Congela transitions/animations: injeta um stylesheet que zera transitions e
+ * deixa animations quase instantâneas, para que animações de entrada
+ * (translate/scale ao revelar) saltem ao estado final em vez de serem
+ * capturadas no meio. Devolve uma função que remove o stylesheet.
+ */
+function freezeAnimations(): () => void {
+  const style = document.createElement("style");
+  style.setAttribute("data-h2f-freeze", "");
+  style.textContent =
+    "*,*::before,*::after{transition:none!important;" +
+    "animation-duration:1ms!important;animation-delay:0s!important;}";
+  (document.head || document.documentElement).appendChild(style);
+  return () => style.remove();
+}
+
+/** Aplica `prop:val !important` inline guardando como desfazer. */
+function forceStyle(el: HTMLElement, prop: string, val: string, undo: (() => void)[]) {
+  const prev = el.style.getPropertyValue(prop);
+  const prevPriority = el.style.getPropertyPriority(prop);
+  el.style.setProperty(prop, val, "important");
+  undo.push(() =>
+    prev ? el.style.setProperty(prop, prev, prevPriority) : el.style.removeProperty(prop)
+  );
+}
+
+/** Desfazeres de reveal acumulados durante a captura (restaurados no finally). */
+let revealUndos: (() => void)[] = [];
+
+function revealIfHidden(el: HTMLElement) {
+  if (el.tagName === "SCRIPT" || el.tagName === "STYLE") return;
+  const cs = getComputedStyle(el);
+  if (parseFloat(cs.opacity) === 0) forceStyle(el, "opacity", "1", revealUndos);
+  if (cs.visibility === "hidden") forceStyle(el, "visibility", "visible", revealUndos);
+  if (cs.getPropertyValue("content-visibility") === "auto")
+    forceStyle(el, "content-visibility", "visible", revealUndos);
+}
+
+function forceRevealHidden(exclude: Element[] = []): void {
+  const isExcluded = (el: Element) => exclude.some((o) => o === el || o.contains(el));
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+    if (isExcluded(el)) continue; // overlays interativos ficam para o estado "click"
+    revealIfHidden(el);
+  }
+}
+
+/** Revela a subárvore de um elemento (usado após montar conteúdo virtualizado). */
+function forceRevealSubtree(root: HTMLElement) {
+  revealIfHidden(root);
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) revealIfHidden(el);
+}
+
+function restoreReveals() {
+  for (const f of revealUndos) f();
+  revealUndos = [];
+}
+
+/**
+ * Scroll-following: traz um elemento off-screen para a viewport, montando
+ * conteúdo virtualizado (que desmonta fora da tela), e revela o que nasceu
+ * escondido. Só age se o elemento está fora da viewport.
+ */
+async function scrollIntoViewIfNeeded(el: Element): Promise<void> {
+  const r = el.getBoundingClientRect();
+  const offscreen = r.top >= innerHeight || r.bottom <= 0;
+  if (!offscreen) return;
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  await nextFrame();
+  await sleep(60); // IntersectionObservers/mount + lazy assets
+  await nextFrame();
+  forceRevealSubtree(el as HTMLElement);
+}
+
+/**
+ * true se a subárvore tem conteúdo "de verdade": texto não-vazio ou imagem
+ * raster. SVG sozinho NÃO conta (são quase sempre ícones/setas decorativas —
+ * ex.: lightbox fechado só com setas ‹ ›, que não vale virar frame).
+ */
+function hasVisibleContent(n: CapturedNode): boolean {
+  if (n.type === "text") return n.content.trim().length > 0;
+  if (n.type === "image") return true;
+  if (n.type === "svg") return false;
+  return n.children.some(hasVisibleContent);
+}
+
+/**
+ * Detecta overlays interativos escondidos (menu/modal/drawer): elementos
+ * ocultos que são `fixed`/`absolute` cobrindo área grande, ou casam seletores
+ * típicos. Retorna só os de topo (não aninhados em outro overlay).
+ */
+function findOverlayRoots(): HTMLElement[] {
+  const SELECTOR =
+    '[role="dialog"],[aria-modal="true"],[class*="overlay" i],[class*="modal" i],[class*="drawer" i],[class*="menu" i]';
+  const candidates: HTMLElement[] = [];
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+    if (SKIP_TAGS.has(el.tagName)) continue;
+    const cs = getComputedStyle(el);
+    const hidden =
+      parseFloat(cs.opacity) === 0 || cs.visibility === "hidden" || cs.display === "none";
+    if (!hidden) continue;
+    const r = el.getBoundingClientRect();
+    const bigCover =
+      (cs.position === "fixed" || cs.position === "absolute") &&
+      r.width >= innerWidth * 0.5 &&
+      r.height >= innerHeight * 0.5;
+    let matchesSel = false;
+    try {
+      matchesSel = el.matches(SELECTOR);
+    } catch {
+      /* seletor 'i' não suportado — ignora */
+    }
+    if (bigCover || matchesSel) candidates.push(el);
+  }
+  // Sobe cada candidato para o container de overlay mais externo, evitando
+  // fatiar (ex.: cada item `span.overlay__num` do menu vira um overlay). Assim
+  // os 3 itens convergem para o `.nav__overlay`/`.menu` que os contém.
+  const climb = (el: HTMLElement): HTMLElement => {
+    let top = el;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      try {
+        if (p.matches(SELECTOR)) top = p;
+      } catch {
+        /* ignora */
+      }
+    }
+    return top;
+  };
+  const roots = Array.from(new Set(candidates.map(climb)));
+  return roots.filter((el) => !roots.some((o) => o !== el && o.contains(el)));
+}
+
+/** Força um overlay (e subárvore) visível para capturar o estado aberto. */
+function forceOverlayVisible(root: HTMLElement): () => void {
+  const undo: (() => void)[] = [];
+  const rcs = getComputedStyle(root);
+  forceStyle(root, "opacity", "1", undo);
+  forceStyle(root, "visibility", "visible", undo);
+  if (rcs.display === "none") forceStyle(root, "display", "block", undo);
+  if (rcs.transform !== "none") forceStyle(root, "transform", "none", undo);
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    const cs = getComputedStyle(el);
+    if (parseFloat(cs.opacity) === 0) forceStyle(el, "opacity", "1", undo);
+    if (cs.visibility === "hidden") forceStyle(el, "visibility", "visible", undo);
+  }
+  return () => undo.forEach((f) => f());
 }
 
 function nextFrame(): Promise<void> {
@@ -65,22 +257,29 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Rola a página inteira antes de capturar para disparar IntersectionObservers
- * (imagens lazy, secoes animadas) e volta ao topo.
+ * Rola a página inteira até o footer para disparar IntersectionObservers
+ * (imagens lazy, seções com scroll-reveal, componentes montados sob demanda).
+ * Espera em cada passo para animações/mounts completarem e assenta no rodapé.
+ * NÃO volta ao topo — o chamador faz isso após forçar o conteúdo visível.
  */
 async function preloadLazyContent(): Promise<void> {
-  const step = Math.max(innerHeight, 200);
-  const maxY = Math.min(
-    document.documentElement.scrollHeight,
-    step * 40 // limite para paginas "infinitas"
-  );
-  for (let y = 0; y <= maxY; y += step) {
-    scrollTo(0, y);
-    await sleep(80);
+  const step = Math.max(Math.round(innerHeight * 0.8), 200);
+  for (let pass = 0; pass < 2; pass++) {
+    let y = 0;
+    // scrollHeight pode crescer conforme conteúdo é montado — recalcula no loop.
+    for (let guard = 0; guard < 80; guard++) {
+      const maxY = document.documentElement.scrollHeight - innerHeight;
+      if (y >= maxY) break;
+      y = Math.min(y + step, maxY);
+      scrollTo(0, y);
+      await sleep(140);
+      await nextFrame();
+    }
+    // assenta no rodapé para reveals/mounts da última dobra completarem
+    scrollTo(0, document.documentElement.scrollHeight);
+    await sleep(450);
+    await nextFrame();
   }
-  scrollTo(0, 0);
-  await sleep(350); // tempo para lazy assets resolverem src
-  await nextFrame();
 }
 
 function emptyRoot(): ElementNode {
@@ -96,10 +295,20 @@ function emptyRoot(): ElementNode {
 
 // ---------------------------------------------------------------- geometria
 
+/**
+ * Suprime o offset de scroll dentro de subárvores `position:fixed` — fixos são
+ * presos à viewport, então sua posição "de página" (como no topo) é o próprio
+ * r.top/left. walkElement incrementa/decrementa ao entrar/sair de um fixed.
+ * Essencial no scroll-following, que lê elementos com a página rolada.
+ */
+let fixedScrollSuppressed = 0;
+const curScrollX = () => (fixedScrollSuppressed > 0 ? 0 : scrollX);
+const curScrollY = () => (fixedScrollSuppressed > 0 ? 0 : scrollY);
+
 function pageRect(r: DOMRect): Rect {
   return {
-    x: r.left + scrollX,
-    y: r.top + scrollY,
+    x: r.left + curScrollX(),
+    y: r.top + curScrollY(),
     width: r.width,
     height: r.height,
   };
@@ -315,13 +524,48 @@ function flexLayout(
 
 // ------------------------------------------------------------------- walker
 
+/** Elementos a pular no walk atual (overlays capturados à parte). */
+const skipInWalk = new Set<Element>();
+
 async function walkElement(el: Element): Promise<CapturedNode | null> {
   if (SKIP_TAGS.has(el.tagName)) return null;
+  if (skipInWalk.has(el)) return null;
 
-  const cs = getComputedStyle(el);
-  const r = el.getBoundingClientRect();
-  if (isInvisible(el, cs, r)) return null;
+  const isFixed = getComputedStyle(el).position === "fixed";
+  // Scroll-following: traz elementos off-screen à viewport (re-monta conteúdo
+  // virtualizado) antes de medir. Fixos não rolam (presos à viewport); dentro
+  // de uma subárvore fixa também não.
+  if (!isFixed && fixedScrollSuppressed === 0) await scrollIntoViewIfNeeded(el);
 
+  // Sticky pode estar "grudado" (deslocado da posição de fluxo) quando o
+  // scroll-following passa por ele. relative ocupa o mesmo lugar no fluxo,
+  // então o swap lê o elemento — e a subárvore toda — na posição natural.
+  const undoSticky: (() => void)[] = [];
+  if (getComputedStyle(el).position === "sticky") {
+    forceStyle(el as HTMLElement, "position", "relative", undoSticky);
+  }
+
+  if (isFixed) fixedScrollSuppressed++;
+  try {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    if (isInvisible(el, cs, r)) return null;
+    // Converte para coordenadas de página JÁ — o scroll-following desce a
+    // página durante o walk dos filhos, e pageRect(r) tardio somaria o
+    // scroll de depois a um rect medido agora (container deslocado).
+    return await buildWalkedNode(el, cs, r, pageRect(r));
+  } finally {
+    if (isFixed) fixedScrollSuppressed--;
+    for (const u of undoSticky) u();
+  }
+}
+
+async function buildWalkedNode(
+  el: Element,
+  cs: CSSStyleDeclaration,
+  r: DOMRect,
+  pr: Rect
+): Promise<CapturedNode | null> {
   if (el instanceof SVGSVGElement) return svgNode(el, r);
   if (el instanceof HTMLImageElement) return await imageNode(el, cs, r);
 
@@ -333,10 +577,13 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
       return {
         type: "image",
         name: `${layerName(el)} (screenshot)`,
-        rect: pageRect(r),
+        rect: pr,
         src: shot,
         objectFit: "fill",
         borderRadius: parseRadius(cs),
+        borders: parseBorders(cs),
+        boxShadow: parseShadows(cs.boxShadow),
+        opacity: Number(cs.opacity),
       };
     }
     // falhou — segue com a reconstrução normal
@@ -370,8 +617,10 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
   if (textLines > 1) layout = null;
 
   // Grid: deriva a célula (start + span) de cada filho pela geometria real.
+  // `pr`, não `r`: os rects dos filhos estão em coordenadas de página, e a
+  // origem do grid precisa estar no mesmo sistema (DOMRect passaria no tipo).
   if (layout && layout.mode === "grid") {
-    computeGridAreas(layout, r, cs, entries.map((e) => e.node));
+    computeGridAreas(layout, pr, cs, entries.map((e) => e.node));
   }
 
   const styles = await elementStyles(el, cs);
@@ -379,15 +628,15 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
 
   // Pseudo-elementos ::before/::after entram como filhos sintéticos
   // (::before antes do conteúdo, ::after depois — ordem de pintura do CSS).
-  const before = await pseudoNode(el, "::before", r);
-  const after = await pseudoNode(el, "::after", r);
+  const before = await pseudoNode(el, "::before", pr);
+  const after = await pseudoNode(el, "::after", pr);
   const children = entries.map((e) => e.node);
   if (before) children.unshift(before);
   if (after) children.push(after);
 
   // Com rotação, o getBoundingClientRect devolve a AABB da caixa girada;
   // usamos a caixa não-transformada (offset*) e deixamos o Figma rotacionar.
-  const rect = styles.rotation !== 0 ? untransformedRect(el, r) : pageRect(r);
+  const rect = styles.rotation !== 0 ? untransformedRect(el, pr) : pr;
 
   return {
     type: "element",
@@ -407,7 +656,7 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
 async function pseudoNode(
   el: Element,
   which: "::before" | "::after",
-  parentRect: DOMRect
+  parentRect: Rect // já em coordenadas de página (medido na hora certa do walk)
 ): Promise<CapturedNode | null> {
   const pcs = getComputedStyle(el, which);
   const content = pcs.content;
@@ -424,13 +673,13 @@ async function pseudoNode(
   const parentCs = getComputedStyle(el);
   const padLeft = parseFloat(parentCs.borderLeftWidth) + parseFloat(parentCs.paddingLeft);
   const padTop = parseFloat(parentCs.borderTopWidth) + parseFloat(parentCs.paddingTop);
-  let x = parentRect.left + scrollX + padLeft;
-  let y = parentRect.top + scrollY + padTop;
+  let x = parentRect.x + padLeft;
+  let y = parentRect.y + padTop;
   if (pcs.position === "absolute" || pcs.position === "fixed") {
-    if (pcs.left !== "auto") x = parentRect.left + scrollX + parseFloat(pcs.left);
-    else if (pcs.right !== "auto") x = parentRect.right + scrollX - parseFloat(pcs.right) - w;
-    if (pcs.top !== "auto") y = parentRect.top + scrollY + parseFloat(pcs.top);
-    else if (pcs.bottom !== "auto") y = parentRect.bottom + scrollY - parseFloat(pcs.bottom) - h;
+    if (pcs.left !== "auto") x = parentRect.x + parseFloat(pcs.left);
+    else if (pcs.right !== "auto") x = parentRect.x + parentRect.width - parseFloat(pcs.right) - w;
+    if (pcs.top !== "auto") y = parentRect.y + parseFloat(pcs.top);
+    else if (pcs.bottom !== "auto") y = parentRect.y + parentRect.height - parseFloat(pcs.bottom) - h;
   }
 
   const name = `${el.tagName.toLowerCase()}${which}`;
@@ -464,8 +713,10 @@ async function pseudoStyles(
   const bg = pcs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  const backgroundLayers = await parseBackgroundLayers(pcs.backgroundImage, (url) =>
-    toDataURL(url, w, h)
+  const backgroundLayers = await parseBackgroundLayers(
+    pcs.backgroundImage,
+    pcs.backgroundSize,
+    (url) => toDataURL(url, w, h)
   );
 
   return {
@@ -474,6 +725,9 @@ async function pseudoStyles(
     borders: parseBorders(pcs),
     borderRadius: parseRadius(pcs),
     boxShadow: parseShadows(pcs.boxShadow),
+    layerBlur: parseBlur(pcs.filter),
+    backgroundBlur: parseBlur(pcs.backdropFilter),
+    blendMode: parseBlendMode(pcs.mixBlendMode),
     opacity: Number(pcs.opacity),
     overflowHidden: pcs.overflow === "hidden" || pcs.overflow === "clip",
     layout: null,
@@ -481,12 +735,13 @@ async function pseudoStyles(
   };
 }
 
-/** Caixa de layout (sem transform), centrada no mesmo ponto que a AABB girada. */
-function untransformedRect(el: Element, r: DOMRect): Rect {
-  const cx = r.left + r.width / 2 + scrollX;
-  const cy = r.top + r.height / 2 + scrollY;
-  const w = (el as HTMLElement).offsetWidth || r.width;
-  const h = (el as HTMLElement).offsetHeight || r.height;
+/** Caixa de layout (sem transform), centrada no mesmo ponto que a AABB girada.
+ *  `pr` já está em coordenadas de página (medido na hora certa do walk). */
+function untransformedRect(el: Element, pr: Rect): Rect {
+  const cx = pr.x + pr.width / 2;
+  const cy = pr.y + pr.height / 2;
+  const w = (el as HTMLElement).offsetWidth || pr.width;
+  const h = (el as HTMLElement).offsetHeight || pr.height;
   return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
 }
 
@@ -554,8 +809,17 @@ function splitLines(t: Text): { content: string; rect: Rect }[] {
     .filter((l) => l.content.length > 0);
 }
 
+/** true quando o elemento recorta o background no texto (gradiente em texto). */
+function backgroundClipText(cs: CSSStyleDeclaration): boolean {
+  return (
+    cs.getPropertyValue("-webkit-background-clip").trim() === "text" ||
+    cs.getPropertyValue("background-clip").trim() === "text"
+  );
+}
+
 function textStylesFrom(cs: CSSStyleDeclaration): TextStyles {
   const lh = cs.lineHeight;
+  const clipGradient = backgroundClipText(cs) ? parseGradient(cs.backgroundImage) : null;
   return {
     fontFamily: cs.fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, ""),
     fontSize: parseFloat(cs.fontSize),
@@ -564,6 +828,7 @@ function textStylesFrom(cs: CSSStyleDeclaration): TextStyles {
     lineHeight: lh.endsWith("px") ? parseFloat(lh) : null,
     letterSpacing: cs.letterSpacing === "normal" ? 0 : parseFloat(cs.letterSpacing),
     color: cs.color,
+    gradient: clipGradient,
     textAlign: (["left", "center", "right", "justify"].includes(cs.textAlign)
       ? cs.textAlign
       : "left") as TextStyles["textAlign"],
@@ -575,7 +840,25 @@ function textStylesFrom(cs: CSSStyleDeclaration): TextStyles {
     textTransform: (["uppercase", "lowercase", "capitalize"].includes(cs.textTransform)
       ? cs.textTransform
       : "none") as TextStyles["textTransform"],
+    textShadow: parseTextShadows(cs.textShadow),
   };
+}
+
+/** text-shadow → sombras (sem spread/inset). Cor pode vir antes ou depois. */
+function parseTextShadows(v: string): Shadow[] {
+  if (!v || v === "none") return [];
+  return splitTopLevel(v).flatMap((part) => {
+    const color = part.match(/rgba?\([^)]+\)/)?.[0] ?? "rgba(0,0,0,0.5)";
+    const nums = part
+      .replace(/rgba?\([^)]+\)/, "")
+      .trim()
+      .split(/\s+/)
+      .map(parseFloat)
+      .filter((n) => !isNaN(n));
+    if (nums.length < 2) return [];
+    const [offsetX, offsetY, blur = 0] = nums;
+    return [{ offsetX, offsetY, blur, spread: 0, color, inset: false }];
+  });
 }
 
 // ------------------------------------------------------------------ imagens
@@ -597,6 +880,9 @@ async function imageNode(
     src: (await toDataURL(url, r.width, r.height)) ?? url,
     objectFit: (cs.objectFit || "fill") as ImageNode["objectFit"],
     borderRadius: parseRadius(cs),
+    borders: parseBorders(cs),
+    boxShadow: parseShadows(cs.boxShadow),
+    opacity: Number(cs.opacity),
   };
 }
 
@@ -706,10 +992,24 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 
 // ----------------------------------------------------------- screenshot fallback
 
+/** mix-blend-mode → valor CSS, ou null quando normal (não altera o nó). */
+function parseBlendMode(value: string): string | null {
+  return value && value !== "normal" ? value.trim() : null;
+}
+
+/** Raio de um `blur(Npx)` isolado; 0 se o valor não é exatamente um blur. */
+function parseBlur(value: string): number {
+  if (!value || value === "none") return 0;
+  const m = value.trim().match(/^blur\(([\d.]+)px\)$/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
 /** Elementos cuja reconstrução por nós é fraca → melhor rasterizar. */
 function shouldScreenshot(el: Element, cs: CSSStyleDeclaration, r: DOMRect): boolean {
   const tag = el.tagName;
-  const candidate = tag === "CANVAS" || tag === "VIDEO" || (cs.filter !== "none" && !!cs.filter);
+  // filter: blur puro vira efeito nativo (LAYER_BLUR), não screenshot.
+  const filterCandidate = cs.filter !== "none" && !!cs.filter && parseBlur(cs.filter) === 0;
+  const candidate = tag === "CANVAS" || tag === "VIDEO" || filterCandidate;
   if (!candidate) return false;
   // Precisa caber no viewport (captureVisibleTab só pega a área visível).
   return r.width >= 1 && r.height >= 1 && r.width <= innerWidth && r.height <= innerHeight;
@@ -791,6 +1091,9 @@ function defaultStyles(): ElementStyles {
     borders: null,
     borderRadius: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 },
     boxShadow: [],
+    layerBlur: 0,
+    backgroundBlur: 0,
+    blendMode: null,
     opacity: 1,
     overflowHidden: false,
     layout: null,
@@ -805,17 +1108,25 @@ async function elementStyles(
   const bg = cs.backgroundColor;
   const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
 
-  const backgroundLayers = await parseBackgroundLayers(cs.backgroundImage, (url) => {
-    const r = el.getBoundingClientRect();
-    return toDataURL(url, r.width, r.height);
-  });
+  // background-clip:text: o background é recortado no texto (vira fill dos
+  // TextNodes filhos), então o próprio elemento não pinta nada.
+  const clipText = backgroundClipText(cs);
+  const backgroundLayers = clipText
+    ? []
+    : await parseBackgroundLayers(cs.backgroundImage, cs.backgroundSize, (url) => {
+        const r = el.getBoundingClientRect();
+        return toDataURL(url, r.width, r.height);
+      });
 
   return {
-    backgroundColor: transparent ? null : bg,
+    backgroundColor: transparent || clipText ? null : bg,
     backgroundLayers,
     borders: parseBorders(cs),
     borderRadius: parseRadius(cs),
     boxShadow: parseShadows(cs.boxShadow),
+    layerBlur: parseBlur(cs.filter),
+    backgroundBlur: parseBlur(cs.backdropFilter),
+    blendMode: parseBlendMode(cs.mixBlendMode),
     opacity: Number(cs.opacity),
     overflowHidden: cs.overflow === "hidden" || cs.overflow === "clip",
     layout: null, // preenchido pelo walkElement
@@ -919,15 +1230,24 @@ function parseShadows(v: string): Shadow[] {
  */
 async function parseBackgroundLayers(
   bgi: string,
+  bgSize: string,
   resolveImage: (url: string) => Promise<string | null>
 ): Promise<BackgroundLayer[]> {
   if (!bgi || bgi === "none") return [];
+  const sizes = splitTopLevel(bgSize);
+  const fitFor = (i: number): "FILL" | "FIT" => {
+    const s = (sizes[i] ?? sizes[0] ?? "").trim();
+    if (s === "contain") return "FIT";
+    return "FILL"; // cover, auto, px… → FILL
+  };
   const layers: BackgroundLayer[] = [];
-  for (const part of splitTopLevel(bgi)) {
+  const parts = splitTopLevel(bgi);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
     const urlMatch = part.match(/url\(["']?([^"')]+)["']?\)/);
     if (urlMatch) {
       const src = await resolveImage(urlMatch[1]);
-      if (src) layers.push({ kind: "image", src });
+      if (src) layers.push({ kind: "image", src, scaleMode: fitFor(i) });
     } else {
       const gradient = parseGradient(part);
       if (gradient) layers.push({ kind: "gradient", gradient });
