@@ -550,7 +550,10 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
     const cs = getComputedStyle(el);
     const r = el.getBoundingClientRect();
     if (isInvisible(el, cs, r)) return null;
-    return await buildWalkedNode(el, cs, r);
+    // Converte para coordenadas de página JÁ — o scroll-following desce a
+    // página durante o walk dos filhos, e pageRect(r) tardio somaria o
+    // scroll de depois a um rect medido agora (container deslocado).
+    return await buildWalkedNode(el, cs, r, pageRect(r));
   } finally {
     if (isFixed) fixedScrollSuppressed--;
     for (const u of undoSticky) u();
@@ -560,7 +563,8 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
 async function buildWalkedNode(
   el: Element,
   cs: CSSStyleDeclaration,
-  r: DOMRect
+  r: DOMRect,
+  pr: Rect
 ): Promise<CapturedNode | null> {
   if (el instanceof SVGSVGElement) return svgNode(el, r);
   if (el instanceof HTMLImageElement) return await imageNode(el, cs, r);
@@ -573,7 +577,7 @@ async function buildWalkedNode(
       return {
         type: "image",
         name: `${layerName(el)} (screenshot)`,
-        rect: pageRect(r),
+        rect: pr,
         src: shot,
         objectFit: "fill",
         borderRadius: parseRadius(cs),
@@ -622,15 +626,15 @@ async function buildWalkedNode(
 
   // Pseudo-elementos ::before/::after entram como filhos sintéticos
   // (::before antes do conteúdo, ::after depois — ordem de pintura do CSS).
-  const before = await pseudoNode(el, "::before", r);
-  const after = await pseudoNode(el, "::after", r);
+  const before = await pseudoNode(el, "::before", pr);
+  const after = await pseudoNode(el, "::after", pr);
   const children = entries.map((e) => e.node);
   if (before) children.unshift(before);
   if (after) children.push(after);
 
   // Com rotação, o getBoundingClientRect devolve a AABB da caixa girada;
   // usamos a caixa não-transformada (offset*) e deixamos o Figma rotacionar.
-  const rect = styles.rotation !== 0 ? untransformedRect(el, r) : pageRect(r);
+  const rect = styles.rotation !== 0 ? untransformedRect(el, pr) : pr;
 
   return {
     type: "element",
@@ -650,7 +654,7 @@ async function buildWalkedNode(
 async function pseudoNode(
   el: Element,
   which: "::before" | "::after",
-  parentRect: DOMRect
+  parentRect: Rect // já em coordenadas de página (medido na hora certa do walk)
 ): Promise<CapturedNode | null> {
   const pcs = getComputedStyle(el, which);
   const content = pcs.content;
@@ -667,13 +671,13 @@ async function pseudoNode(
   const parentCs = getComputedStyle(el);
   const padLeft = parseFloat(parentCs.borderLeftWidth) + parseFloat(parentCs.paddingLeft);
   const padTop = parseFloat(parentCs.borderTopWidth) + parseFloat(parentCs.paddingTop);
-  let x = parentRect.left + curScrollX() + padLeft;
-  let y = parentRect.top + curScrollY() + padTop;
+  let x = parentRect.x + padLeft;
+  let y = parentRect.y + padTop;
   if (pcs.position === "absolute" || pcs.position === "fixed") {
-    if (pcs.left !== "auto") x = parentRect.left + curScrollX() + parseFloat(pcs.left);
-    else if (pcs.right !== "auto") x = parentRect.right + curScrollX() - parseFloat(pcs.right) - w;
-    if (pcs.top !== "auto") y = parentRect.top + curScrollY() + parseFloat(pcs.top);
-    else if (pcs.bottom !== "auto") y = parentRect.bottom + curScrollY() - parseFloat(pcs.bottom) - h;
+    if (pcs.left !== "auto") x = parentRect.x + parseFloat(pcs.left);
+    else if (pcs.right !== "auto") x = parentRect.x + parentRect.width - parseFloat(pcs.right) - w;
+    if (pcs.top !== "auto") y = parentRect.y + parseFloat(pcs.top);
+    else if (pcs.bottom !== "auto") y = parentRect.y + parentRect.height - parseFloat(pcs.bottom) - h;
   }
 
   const name = `${el.tagName.toLowerCase()}${which}`;
@@ -729,12 +733,13 @@ async function pseudoStyles(
   };
 }
 
-/** Caixa de layout (sem transform), centrada no mesmo ponto que a AABB girada. */
-function untransformedRect(el: Element, r: DOMRect): Rect {
-  const cx = r.left + r.width / 2 + curScrollX();
-  const cy = r.top + r.height / 2 + curScrollY();
-  const w = (el as HTMLElement).offsetWidth || r.width;
-  const h = (el as HTMLElement).offsetHeight || r.height;
+/** Caixa de layout (sem transform), centrada no mesmo ponto que a AABB girada.
+ *  `pr` já está em coordenadas de página (medido na hora certa do walk). */
+function untransformedRect(el: Element, pr: Rect): Rect {
+  const cx = pr.x + pr.width / 2;
+  const cy = pr.y + pr.height / 2;
+  const w = (el as HTMLElement).offsetWidth || pr.width;
+  const h = (el as HTMLElement).offsetHeight || pr.height;
   return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
 }
 

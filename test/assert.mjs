@@ -241,6 +241,12 @@ check("overlay: menu capturado como overlay separado", !!menuOverlay);
 const virt = findByName(root, "Virtualizado Visivel");
 check("scroll-following: conteúdo virtualizado capturado", !!virt);
 
+// --- containers: rect em coordenadas de página do MOMENTO DA MEDIÇÃO ---
+// (o scroll-following desce a página durante o walk dos filhos; o rect do
+// container não pode somar o scroll de depois — o body deve sair em y=0)
+check(`root em x=0 (x=${root.rect.x})`, Math.abs(root.rect.x) <= 1);
+check(`root em y=0 (y=${root.rect.y})`, Math.abs(root.rect.y) <= 1);
+
 // --- sticky durante scroll-following: capturado na posição natural, não grudado ---
 const stickySection = findByName(root, "section.sticky-test");
 const stickyHead = findByName(root, "div.sticky-head");

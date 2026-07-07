@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <style>
   * { box-sizing: border-box; margin: 0; }
-  body { width: 1000px; font-family: Arial; }
+  body { width: 1000px; font-family: Arial; margin: 0; padding-top: 1px; }
+  /* padding-top evita colapso de margem com o 1º filho (body ficaria abaixo de y=0) */
 
   /* 1. Flex row com um filho position:relative no meio (testa reorder por paint order) */
   .flex-row { display: flex; flex-direction: row; gap: 20px; padding: 16px; background: #eee; }
