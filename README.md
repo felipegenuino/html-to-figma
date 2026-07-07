@@ -181,10 +181,12 @@ Se o relay não estiver rodando, tudo cai no fluxo de clipboard normalmente.
   certo; o hero é lido assentado no topo (parallax JS estabilizado). Resolve de
   uma vez parallax e conteúdo que desmonta off-screen. Coords de `fixed` ficam
   corretas via supressão do offset de scroll na subárvore fixa.
+- **Sticky durante o scroll**: elemento `sticky` "grudado" na hora da medição é
+  lido na posição natural de fluxo (swap temporário `sticky → relative`, que
+  ocupa o mesmo lugar no layout).
 
 ## Próximos passos
 
-- `sticky` preso durante o scroll-following.
 - Escala/skew em `transform` e suporte a `matrix3d`.
 - Screenshot de elementos maiores que o viewport (stitching de múltiplas capturas).
 - `background-position`/`background-repeat` (TILE) e `background-size` em px por

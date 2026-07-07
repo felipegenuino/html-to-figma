@@ -241,6 +241,16 @@ check("overlay: menu capturado como overlay separado", !!menuOverlay);
 const virt = findByName(root, "Virtualizado Visivel");
 check("scroll-following: conteúdo virtualizado capturado", !!virt);
 
+// --- sticky durante scroll-following: capturado na posição natural, não grudado ---
+const stickySection = findByName(root, "section.sticky-test");
+const stickyHead = findByName(root, "div.sticky-head");
+check("sticky: section encontrada", !!stickySection);
+check("sticky: header encontrado", !!stickyHead);
+if (stickySection && stickyHead) {
+  const dy = Math.abs(stickyHead.rect.y - stickySection.rect.y);
+  check(`sticky: y natural = topo da section (delta ${dy}px)`, dy <= 1);
+}
+
 if (failures.length) {
   console.error(`\n✗ ${failures.length} asserção(ões) falharam:`);
   for (const f of failures) console.error("  -", f);

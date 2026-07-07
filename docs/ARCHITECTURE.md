@@ -109,11 +109,15 @@ Resolve parallax E virtualização de uma vez: lê a geometria de cada elemento
 - **Hero**: lido primeiro, com a página assentada no topo ⇒ parallax correto.
   **Mid-page virtualizado**: re-montado ao ser alcançado ⇒ não some.
 
+- **Sticky**: pode estar "grudado" (deslocado do fluxo) quando o walker chega
+  nele. `walkElement` troca `position: sticky → relative` (mesmo layout de
+  fluxo) durante a medição da subárvore e restaura depois — o elemento sai na
+  posição natural, como a página é vista no scroll 0
+  (spec: `docs/superpowers/specs/2026-07-07-sticky-scroll-following-design.md`).
+
 Coberto headless por `test/fixture.html` (`.virt-test` desmonta off-screen via
-IntersectionObserver) + assert. Limite: `sticky` "grudado" durante o scroll pode
-ficar deslocado (tratado como fluxo normal).
+IntersectionObserver; `.sticky-test` mede sticky grudado) + assert.
 
 ## Próximos passos
-- `sticky` preso durante o scroll-following (tratar como fixed quando grudado).
 - Escala/skew em `transform` e `matrix3d`.
 - `object-position`/`background-position`/`background-repeat` (imageTransform/TILE).

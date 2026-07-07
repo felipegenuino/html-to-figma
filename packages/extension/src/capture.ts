@@ -537,15 +537,23 @@ async function walkElement(el: Element): Promise<CapturedNode | null> {
   // de uma subárvore fixa também não.
   if (!isFixed && fixedScrollSuppressed === 0) await scrollIntoViewIfNeeded(el);
 
-  const cs = getComputedStyle(el);
-  const r = el.getBoundingClientRect();
-  if (isInvisible(el, cs, r)) return null;
+  // Sticky pode estar "grudado" (deslocado da posição de fluxo) quando o
+  // scroll-following passa por ele. relative ocupa o mesmo lugar no fluxo,
+  // então o swap lê o elemento — e a subárvore toda — na posição natural.
+  const undoSticky: (() => void)[] = [];
+  if (getComputedStyle(el).position === "sticky") {
+    forceStyle(el as HTMLElement, "position", "relative", undoSticky);
+  }
 
   if (isFixed) fixedScrollSuppressed++;
   try {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    if (isInvisible(el, cs, r)) return null;
     return await buildWalkedNode(el, cs, r);
   } finally {
     if (isFixed) fixedScrollSuppressed--;
+    for (const u of undoSticky) u();
   }
 }
 

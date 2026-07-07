@@ -148,6 +148,13 @@
   <!-- 22. Virtualização: conteúdo que desmonta ao sair da viewport (testa scroll-following) -->
   <div style="height: 1600px"></div>
   <section class="virt-test"><span class="virt-content">Virtualizado Visivel</span></section>
+  <!-- 23. Sticky durante scroll-following: medido grudado deve sair na posição natural.
+       O espaçador deixa a section off-screen; o walker a rola para o centro
+       (section > viewport ⇒ topo acima da viewport ⇒ sticky gruda antes de ser medido). -->
+  <div style="height: 2500px"></div>
+  <section class="sticky-test" style="height: 4200px; position: relative; background: #eef;">
+    <div class="sticky-head" style="position: sticky; top: 0; height: 60px; background: #fc6;">Sticky Natural</div>
+  </section>
   <script>
     (function () {
       var box = document.querySelector('.virt-test');
